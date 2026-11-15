@@ -101,7 +101,7 @@ function simulate(sequence, cfg, book=skills, options={}) {
   if(recovered>0)notes.push(`等待回能 ${fmt(recovered)}`);
   notes.push(...gapNote());
   cooldowns[entry.id]=t+Math.max(0,Number(s.cd)-(entry.id==='strike'?0.4*Number(cfg.flashRank||0):['vanish','blind'].includes(entry.id)?45*Number(cfg.elusivenessRank||0):0)); if(!entry.offGcd)ready=t+gcd; if(!s.self)lastAction=t; if(!s.vanish&&!s.self)inCombat=true;
-  rows.push({index:i,name:s.name,time:t,before,after:energy,cp,controlEnd,gap,notes,cost,comboOverflow,energyShortage,energyWait,controlGap:gap-startGap,gapReasons});
+  rows.push({index:i,name:s.name,time:t,before,after:energy,cp,cpBefore:oldCp,controlEnd,gap,notes,cost,comboOverflow,energyShortage,energyWait,controlGap:gap-startGap,gapReasons});
  }
  return {rows,stopped,gap,controlled:controlled+Math.max(0,controlEnd-t),energyWait:totalEnergyWait,time:t,energy,cp,controlEnd};
 }
