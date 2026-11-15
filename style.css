@@ -69,3 +69,34 @@
 @media(max-width:350px){.palette{grid-template-columns:repeat(3,minmax(0,1fr))}}
 
 .bleed-timeline b.note-success{color:#9bdda8}
+
+/* 连招阶段：先读伤害与状态，需要时展开计算依据。 */
+#rows{display:grid;gap:8px;margin-top:12px}
+.stage-card{min-width:0;padding:12px 14px;border:1px solid #3b4d42;border-left:3px solid #9a8051;border-radius:5px;background:#1b2520}
+.stage-card.error{border-color:#a06353;border-left-color:#ef9780;background:#30221f}
+.stage-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;color:#c9d3c6;font-size:13px}
+.stage-head strong{font-size:15px;color:#f2efe3}.stage-head time,.stage-head small{color:#a9b7aa;font-size:12px}
+.stage-primary{display:flex;align-items:baseline;flex-wrap:wrap;gap:3px 12px;margin:4px 0;color:#d8dfd4;line-height:1.25;min-width:0}
+.stage-damage{color:#f2d08d;font-weight:700;font-size:22px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.stage-damage b,.stage-damage strong{color:inherit;font-size:inherit}.stage-damage small{font-size:12px;color:#c7d1c3;font-weight:400}
+.stage-cumulative{color:#b5c2b5;font-size:12px}.stage-cumulative b{color:#e6e8db;font-variant-numeric:tabular-nums}
+.stage-stats{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;color:#acbcae;font-size:12px;line-height:1.45}
+.stage-stats b{color:#e3e8d8;font-weight:600;font-variant-numeric:tabular-nums}.stage-stats .dim{color:#596a5d}
+.stage-flags{display:flex;flex-wrap:wrap;gap:4px;margin-top:5px;min-width:0}.stage-flags:empty{display:none}
+.stage-flag{padding:2px 6px;border:1px solid #4b5a4c;border-radius:3px;font-size:12px;line-height:1.45;overflow-wrap:anywhere}
+.stage-flag.note-warning{color:#ffac9d;border-color:#a76357;background:#422a26}.stage-flag.note-success{color:#a9e5b3;border-color:#54835d;background:#203a2a}.stage-flag.note-overflow{color:#ffd08a;border-color:#a57a42;background:#40301e}
+.stage-details{margin-top:4px;color:#c5d0c2;font-size:12px;line-height:1.65;overflow-wrap:anywhere}.stage-details summary{display:flex;align-items:center;min-height:34px;width:max-content;max-width:100%;color:#d7bd84;cursor:pointer;list-style:none}.stage-details summary::-webkit-details-marker{display:none}.stage-details summary::after{content:' ▾';margin-left:5px}.stage-details[open] summary::after{content:' ▴'}.stage-details summary:focus-visible{outline:2px solid #e8c77f;outline-offset:2px}
+.seqrow{flex-wrap:wrap}.seq-preview{display:block;flex-basis:100%;min-width:0;padding:8px 10px;background:#1c2721;border-left:2px solid #7a906f;border-radius:2px;color:#c6d1c5;font-size:12px;overflow-wrap:anywhere}
+.damage-results .summary-hero{background:#283429}.damage-results .summary-hero b{font-size:28px;color:#f5d696;font-weight:700;font-variant-numeric:tabular-nums}
+@media(max-width:600px){
+ .stage-card{padding:10px 11px}.stage-damage{font-size:24px}.stage-stats{gap:3px 10px;font-size:12px}
+ .stage-details summary{min-height:44px}.seq-preview{padding:7px 9px}.seq-preview .stage-primary{margin:2px 0}
+ .live-preview .stage-primary{margin:0}.live-preview .stage-damage{font-size:20px}.live-preview .stage-stats{gap:2px 9px;font-size:11px}.live-preview .stage-flags{margin-top:3px}
+ .live-preview .stage-flag{font-size:11px;padding:1px 4px}.damage-results .summary-hero b{font-size:27px}
+}
+/* 主数字和标签分级，控制说明按需展开。 */
+.stage-damage{display:flex;align-items:baseline;gap:7px}.stage-damage span{color:#c1cabc;font-size:12px;font-weight:500}.stage-stars i{font-style:normal;color:#64766a}.stage-head strong span{color:#d1ae68;margin-right:8px}.stages-heading{margin:20px 0 6px;font-size:15px;color:#ebeadf}.stages-heading small{display:block;margin-top:3px;color:#aab8aa;font-size:12px;font-weight:400}.model-details{margin-top:12px;border:1px solid #3d5143;border-radius:4px;background:#1a241e;padding:10px 12px}.model-details summary{cursor:pointer;color:#e2c185;min-height:28px}.damage-results .summary-hero{grid-column:span 2}
+@media(max-width:600px){.model-details summary{min-height:44px;display:flex;align-items:center}.damage-results .summary-hero{grid-column:1 / -1}.stage-damage span{font-size:12px}}
+.model-details summary{list-style:none}.model-details summary::-webkit-details-marker{display:none}.model-details summary::after{content:' ▾';margin-left:6px}.model-details[open] summary::after{content:' ▴'}
+
+.gear-setup{margin:12px 0;padding:0 12px 12px;border:1px solid #425449;border-radius:5px;background:#151e19}.gear-setup summary{margin:0 -12px}.gear-setup a{color:#e9ce8e}.gear-switch{display:flex;align-items:center;gap:8px;color:#dae4d6;margin:12px 0;min-height:44px}.gear-switch input{width:20px;height:20px}.damage-fields input:disabled{opacity:.5}.gear-setup button{margin-top:8px}
