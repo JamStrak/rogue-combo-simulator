@@ -110,7 +110,7 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
   }
  }
  whiteEvents.sort((a,b)=>a.time-b.time||a.index-b.index);
- const directEvents=rows.filter(r=>r.directDamage>0).map(r=>({time:r.time,type:'direct',id:sequence[r.index]?.id,index:r.index,damage:r.directDamage}));
+ const directEvents=rows.filter(r=>r.directDamage>0).map(r=>({time:r.time,type:'direct',id:sequence[r.index]?.id,index:r.index,damage:r.directDamage,critMode:r.critMode}));
  const order={bleed:0,white:1,direct:2};
  const events=[...bleedEvents,...whiteEvents,...directEvents].sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
  let cumulative=0,position=0,whitePosition=0;

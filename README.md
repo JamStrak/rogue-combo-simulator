@@ -34,6 +34,12 @@
 
 资料：[迅影套装](https://metabot.gg/en/wow-forever/item-sets/shadowcraft-armor)、[觅心者](https://www.wowhead.com/forever/item=12783/heartseeker)、[Distracting Dagger](https://www.wowhead.com/forever/item=18392/distracting-dagger)、[人物基础属性](https://questcorehq.com/wowdb/forever/class/4/rogue)、[刺击](https://db.icy-veins.com/wow-forever/spells/1329549)、[伏击](https://db.icy-veins.com/wow-forever/spells/11269)、[背刺](https://db.icy-veins.com/wow-forever/spells/11281)、[邪恶攻击](https://db.icy-veins.com/wow-forever/spells/11294)、[刺骨](https://db.icy-veins.com/wow-forever/spells/11300)、[毁伤](https://db.icy-veins.com/wow-forever/spells/1241584)、[技能公式的社区模拟参考](https://github.com/gunba/wow-forever-sim/blob/forever/docs/beta-pass/rogue.md)、[绞喉](https://www.wowhead.com/forever/spell=11290/garrote)、[割裂](https://www.wowhead.com/forever/spell=1943/rupture)。攻击强度、匕首归一化与技能系数均为资料和社区模型下的估算，尚未经游戏实测。
 
+## 木桩战斗演示
+
+在连招编排区选择技能后，点击“观看木桩演示”跳转到播放面板。木桩默认 10000 生命，可自行修改；支持播放、暂停、重置以及 0.5 / 1 / 2 / 4 倍速。攻击时显示技能、主手或副手平砍、流血及对应伤害，生命和能量随时间更新；木桩生命归零后仍继续播放并累计溢出伤害，便于与推演总伤害比较。修改连招、天赋或战斗 / 伤害设置后，播放自动重置。
+
+演示使用当前那一次推演结果及同一批伤害事件，不会单独重新掷骰；平砍和部分技能的伤害仍是暴击期望。能量按当前配置连续恢复，包含冲动的回能加速；最后动作后只播放现有模型已经计算的控制期平砍与流血尾伤，不代表无限制持续攻击；尾段的能量按同样的规则外推展示。木桩和画面均为示意，无法操作游戏或模拟对手行为。
+
 ## 起手星数和终结技天赋
 
 - 偷袭基础 2 星，伏击、绞喉基础各 1 星；先发制人 1 / 2 / 3 级分别以 33% / 67% / 100% 几率额外获得 1 星，满级时分别是 3 / 2 / 2 星。
@@ -72,4 +78,4 @@
 
 ## 开发验证
 
-`node test-talent-details.js` 验证全部图标和各级说明；`node test-talents.js` 验证链接导入、天赋约束、同步和预谋；`node test-probability.js` 验证概率枚举、抽样降级、联合概率与相关天赋；`node test-engine.js` 验证回能、减耗、起手星数、天赋返星和概率分支、控制递减与重置、空档、公共 CD、能量等待、冷却、潜行及打破控制。`test-ui.js` 是界面交互验证脚本，需要注入临时副本执行；正常页面不会加载它。
+`node test-replay.js` 验证播放事件及连续回能；`node test-talent-details.js` 验证全部图标和各级说明；`node test-talents.js` 验证链接导入、天赋约束、同步和预谋；`node test-probability.js` 验证概率枚举、抽样降级、联合概率与相关天赋；`node test-engine.js` 验证回能、减耗、起手星数、天赋返星和概率分支、控制递减与重置、空档、公共 CD、能量等待、冷却、潜行及打破控制。`test-ui.js` 是界面交互验证脚本，需要注入临时副本执行；正常页面不会加载它。
