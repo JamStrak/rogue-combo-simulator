@@ -36,7 +36,7 @@ const draftActions={wait:{seconds:1,tip:'维持当前攻击状态并经过一段
 function draftEntry(id){
  const seconds=draftActions[id]?.seconds;
  if(seconds!==undefined)return {id,wait:seconds};
- return id==='premed'?{id,offGcd:true}:{id};
+ return id==='premed'||state.book[id]?.item?{id,offGcd:true}:{id};
 }
 function drawPalette(result){
  const seq=state.sequence,cfg=state.cfg,book=state.book;
@@ -53,16 +53,17 @@ function drawPalette(result){
     label=`当前条件不足 · ${row.notes[0]}`;
     if(row.energyShortage)fit='energy';
    }else{
-    cost=fmt(row.cost);
+    cost=s.item?`+${fmt(s.gain)}`:fmt(row.cost);
     fit=row.energyWait>0?'energy':'ready';
-    label=`预计消耗 ${cost} 能量${fit==='energy'?`，需额外回能 ${fmt(row.energyWait)} 秒`:''}`;
+    label=s.item?`恢复最多 ${fmt(s.gain)} 能量`:`预计消耗 ${cost} 能量${fit==='energy'?`，需额外回能 ${fmt(row.energyWait)} 秒`:''}`;
    }
   }
+  if(s.item&&cost==='—')cost=`+${fmt(s.gain)}`;
   if(unlearned){label='未学习对应天赋';fit='unlearned';}
   if(cooldown>0)label+=` · 冷却 ${fmt(cooldown)} 秒`;
   const hint=escapeHtml(`${s.name}：${label}`);
   const icon=skillIcons[id];
-  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}" ${unlearned?'disabled':''}><span class="skill-picture">${icon?`<img src="${icon}" alt="" loading="lazy">`:''}${unlearned?'<span class="skill-cooldown">未学</span>':cooldown>0?`<span class="skill-cooldown">${fmt(cooldown)}秒</span>`:''}<span class="skill-cost">${cost}</span></span><span class="skill-name">${escapeHtml(s.name)}</span></button>`;
+  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}" ${unlearned?'disabled':''}><span class="skill-picture">${icon?`<img src="${icon}" alt="" loading="lazy">`:''}${unlearned?'<span class="skill-cooldown">未学</span>':cooldown>0?`<span class="skill-cooldown">${fmt(cooldown)}秒</span>`:''}<span class="skill-cost">${cost}</span></span><span class="skill-name">${escapeHtml(s.paletteName||s.name)}</span></button>`;
  }).join('');
 }
 function updateSkillCostHint(){const id=$('#editSkill').value,current=state.book[id].cost,standard=initial.book[id].cost;$('#editBaseNote').textContent=Number(current)!==Number(standard)?`当前基础消耗 ${fmt(current)}，默认 ${fmt(standard)}；天赋和被动会继续减免。`:'填写未减免的基础消耗；天赋和被动会另行计算。';}
@@ -156,13 +157,19 @@ function stageDetails(row,dmg){
  return `<details class="stage-details"><summary>展开详细分析</summary><div>${dmg?`本步伤害 = 技能 ${fmt(dmg.directDamage)} + 平砍 ${fmt(dmg.whiteDamage)} + 流血 ${fmt(dmg.bleedDamage)}；累计不含未来尾伤。<br>${state.damage.weapon.enabled?`平砍命中：${whiteHitTimes(dmg.whiteHits)}<br>`:''}`:'未执行<br>'}${renderNotes(row.notes,row.error)}</div></details>`;
 }
 function drawDraftEnergy(result){
- const {energy,gcdRemaining,energyAtGcd,timeToFull,inCombat,stealth,autoAttacking,combatRemaining,stealthCooldownRemaining}=result;
+ const {energy,cp,gcdRemaining,energyAtGcd,timeToFull,inCombat,stealth,autoAttacking,combatRemaining,stealthCooldownRemaining}=result;
  const max=state.cfg.max,bar=$('#draftEnergyBar');
  bar.max=max;
  bar.value=energy;
  const number=`${fmt(energy)} / ${fmt(max)}`;
  bar.setAttribute('aria-valuetext',`${number} 点能量`);
  $('#draftEnergyText').textContent=number;
+ const combo=$('#draftCombo'),hint=cp>=5?'已满，注意溢出':cp===4?'可考虑终结技':'';
+ combo.dataset.points=cp;
+ combo.setAttribute('aria-label',`当前连击点 ${cp} / 5${hint?'，'+hint:''}`);
+ combo.querySelectorAll('.draft-combo-orbs i').forEach((orb,index)=>orb.classList.toggle('active',index<cp));
+ $('#draftComboText').textContent=`${cp} / 5`;
+ $('#draftComboHint').textContent=hint;
  $('#draftGcd').textContent=gcdRemaining>0?`公共 CD ${fmt(gcdRemaining)} 秒 · 届时 ${fmt(energyAtGcd)} 能量`:'公共 CD 就绪';
  $('#draftEnergyFull').textContent=timeToFull===0?'能量已满':Number.isFinite(timeToFull)?`${fmt(timeToFull)} 秒回满`:'自然回能关闭';
  const attack=autoAttacking?(state.damage.weapon.enabled?'平砍中':'平砍伤害关闭'):'已停手';

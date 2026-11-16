@@ -1,5 +1,7 @@
 // 能力图标按游戏客户端的技能图标整理，图片保存在本地以支持离线使用。
 const skillIcons = {
+ tea:'assets/skills/inv_drink_milk_05.jpg',
+ renataki:'assets/skills/inv_jewelry_necklace_19.jpg',
  premed:'assets/talents/spell_shadow_possession.jpg',
  preparation:'assets/talents/spell_shadow_antishadow.jpg',
  deathmark:'assets/talents/ability_creature_cursed_02.jpg',

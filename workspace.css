@@ -43,6 +43,14 @@ main{width:100%;max-width:1370px;margin:0 auto;padding:18px 20px 0}
 .draft-energy-gauge progress::-webkit-progress-value{background:linear-gradient(#ffe46f,#e6aa21);transition:width .16s ease-out}
 .draft-energy-gauge progress::-moz-progress-bar{background:linear-gradient(#ffe46f,#e6aa21)}
 .draft-energy-number{grid-area:1/1;z-index:1;justify-self:center;align-self:center;pointer-events:none;padding:1px 8px;border-radius:3px;background:#19170edb;color:#ffebae;font-size:15px;font-variant-numeric:tabular-nums;font-weight:800;line-height:1.4}
+.draft-combo{display:flex;align-items:center;flex-wrap:wrap;gap:5px 9px;margin-top:8px;color:#d7d8c9;font-size:12px;font-weight:700}
+.draft-combo-label{color:#d6c18e}
+.draft-combo-orbs{display:inline-flex;align-items:center;gap:5px}
+.draft-combo-orbs i{width:14px;height:14px;border:1px solid #675d47;border-radius:50%;background:#29271e;box-shadow:inset 0 1px 3px #080a08}
+.draft-combo-orbs i.active{border-color:#f1c46b;background:radial-gradient(circle at 35% 30%,#fff1b2,#e49b2e 55%,#a35c1a);box-shadow:0 0 5px #ce8e3d80}
+.draft-combo strong{color:#ffdfa0;font-size:13px;font-variant-numeric:tabular-nums}
+.draft-combo-hint{color:#e6c879;font-weight:600}
+.draft-combo[data-points="5"] .draft-combo-hint{color:#ffad72}
 .draft-energy-details{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 8px;margin-top:7px;color:#d3d5c7;font-size:12px;font-variant-numeric:tabular-nums}
 .draft-combat{flex-basis:100%;color:#e4d3a4}
 .draft-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;margin-top:8px}
@@ -59,6 +67,8 @@ main{width:100%;max-width:1370px;margin:0 auto;padding:18px 20px 0}
 .sim-lab .sequence-head{margin-top:0}
 .active-gear{display:flex;align-items:baseline;flex-wrap:wrap;gap:4px 12px;padding:0 12px 8px;color:#b4c3b6;font-size:12px}
 .active-gear a{white-space:nowrap}
+.combat-damage-total{display:flex;align-items:baseline;gap:7px;margin-left:auto;white-space:nowrap;color:#c4cebe;font-size:12px}
+.combat-damage-total strong{color:#ffe09b;font-size:19px;line-height:1.2;font-variant-numeric:tabular-nums}
 .sub-settings{margin-top:12px;padding:0 12px;background:#19221e;border:1px solid #3b4b40;border-radius:5px}
 .sub-settings>summary,.gear-model>summary{padding:10px 0;min-height:44px;color:#e5cc96;font-weight:600;cursor:pointer}
 .sub-settings[open]{padding-bottom:12px}

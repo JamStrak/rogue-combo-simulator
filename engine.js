@@ -1,4 +1,6 @@
 const skills = {
+ tea:{name:'菊花茶', cost:0, gain:100, cp:0, cc:0, cd:300, self:true, item:true},
+ renataki:{name:'雷纳塔基的狡诈护符', paletteName:'回能护符', cost:0, gain:60, cp:0, cc:0, cd:180, self:true, item:true},
  premed:{name:'预谋', cost:0, gain:0, cp:2, cc:0, cd:120, self:true},
  preparation:{name:'伺机待发', cost:0, gain:0, cp:0, cc:0, cd:600, self:true},
  deathmark:{name:'死亡印记', cost:25, gain:0, cp:0, cc:0, cd:10, finish:true},
@@ -228,7 +230,7 @@ function simulate(sequence, cfg, book=skills, options={}) {
   if(entry.id==='adrenaline'){adrenalineUntil=t+15;notes.push('冲动：15 秒内自然回能翻倍');}
   if(entry.id==='premed'){premedPending=cp-oldCp;premedUntil=t+20;notes.push('预谋连击点在 20 秒内未继续获得连击点或使用终结技会消失');}
   else if(premedPending&&(s.finish||cp>oldCp)){premedPending=0;notes.push('预谋连击点已固定');}
-  if(entry.id==='preparation'){cooldowns={};notes.push('重置其他技能冷却');}
+  if(entry.id==='preparation'){cooldowns=Object.fromEntries(Object.entries(cooldowns).filter(([id])=>book[id]?.item));notes.push('重置其他技能冷却（不重置道具）');}
   if(s.finish){
    if(entry.id==='expose'&&oldCp===5&&cfg.exposeRank){addCombo(Number(cfg.exposeRank));notes.push(`强化破甲：5 星返还 ${cfg.exposeRank} 星`);}
    const rp=20*Number(cfg.ruthlessRank||0);
@@ -248,7 +250,10 @@ function simulate(sequence, cfg, book=skills, options={}) {
   }
   if(entry.id==='ghost') ghostUntil=t+7;
   if(comboOverflow)notes.push(`连击点溢出 ${comboOverflow} 点（超过 5 点上限）`);
-  if(gain) notes.push(`技能恢复 ${gain} 能量`);
+  if(gain){
+   const actual=Math.min(gain,Math.max(0,max-(before-cost)));
+   notes.push(s.item?`道具恢复 ${fmt(actual)} 能量${actual<gain?`（上限截断，原可恢复 ${fmt(gain)}）`:''}`:`技能恢复 ${gain} 能量`);
+  }
   if(['cheap','ambush','garrote','expose'].includes(entry.id)||costInfo.passive) notes.push(`消耗 ${fmt(costInfo.base)}${costInfo.talent?` − ${entry.id==='expose'?'强化破甲':['cheap','garrote'].includes(entry.id)?'卑鄙':'天赋'} ${fmt(costInfo.talent)}`:''}${costInfo.passive?` − 蓄势待发 ${fmt(costInfo.passive)}`:''} = ${fmt(cost)}`);
   if(['cheap','ambush','garrote'].includes(entry.id)&&!costInfo.passive)notes.push(`蓄势待发未生效（${!cfg.prepared?'未启用':inCombat?'战斗中':'能量未满'}）`);
   if(recovered>0)notes.push(`等待回能 ${fmt(recovered)}`);
