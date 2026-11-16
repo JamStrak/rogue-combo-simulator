@@ -166,3 +166,9 @@ main{width:100%;max-width:1370px;margin:0 auto;padding:18px 20px 0}
 .auto-wait-card span{color:#ffe2a7;margin-left:8px}
 .auto-wait-gap{color:#ff9f86;font-weight:700}
 .live-preview .auto-wait-card{margin:6px 0}
+
+/* Distinct advice on the combo points remaining after each successful step. */
+.combo-point-badge{display:inline-flex;align-items:center;max-width:100%;margin:5px 0 1px;padding:2px 7px;border:1px solid #bea45c;border-radius:4px;background:#443d24;color:#ffe09a;font-size:12px;font-weight:700;line-height:1.4;letter-spacing:0;white-space:normal}
+.combo-point-badge.combo-point-full{border-color:#ef9a49;background:#53311d;color:#ffd099}
+.seqrow strong{flex-wrap:wrap;min-width:0}
+.seqrow strong .combo-point-badge{margin:0 0 0 3px}
