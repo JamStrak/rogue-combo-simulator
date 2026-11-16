@@ -146,3 +146,84 @@
   .mobile-talent-tabs button {min-height: 44px;border: 1px solid #49554b;border-radius: 4px;background: #202924;color: #d1dbd2}
   .mobile-talent-tabs [aria-selected="true"] {border-color: #d1ae68;color: #f4d99d;background: #3b3425}
 }
+
+.talent-lab {
+  display: grid;
+  grid-template-columns: minmax(245px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  margin: 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #3d4c42;
+  border-radius: 6px;
+  background: #18221d;
+}
+.talent-level-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px 12px;
+}
+.talent-level-controls label {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  color: #d3dacf;
+}
+.talent-level-controls input {width: 3.8rem}
+.talent-level-controls select {width: auto}
+.talent-level-controls input, .talent-level-controls select {min-height: 44px}
+#talentBudget {flex: 1 0 100%;font-size: 12px;color: #e3c992}
+.talent-compare-actions, .talent-compare-slots, .talent-compare-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.talent-compare-actions button, .talent-compare-filters button {min-height: 44px}
+.talent-compare-slots button {
+  min-height: 44px;
+  flex: 1 1 135px;
+  text-align: left;
+}
+.talent-compare-slots [aria-pressed=true],
+.talent-compare-filters [aria-pressed=true],
+.talent-compare-slots [aria-selected=true],
+.talent-compare-filters [aria-selected=true] {
+  color: #ffe4a9;
+  background: #383222;
+  border-color: #c0a263;
+}
+#talentCompare {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+#talentCompare[hidden], .talent-compare-actions [hidden] {display: none}
+.talent-diff-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  color: #d3dacf;
+  font-size: 13px;
+}
+.talent-diff-list button {min-height: 40px}
+#talentTree .talent-diff-rank {
+  position: absolute;
+  top: -4px;
+  left: -5px;
+  z-index: 1;
+  padding: 1px 4px;
+  border: 1px solid #7f739a;
+  border-radius: 3px;
+  background: #292239;
+  color: #e1caff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+@media(max-width: 730px) {
+  .talent-lab {grid-template-columns: minmax(0, 1fr)}
+  .talent-compare-actions button {flex: 1 1 auto}
+}

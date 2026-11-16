@@ -169,7 +169,7 @@ function setupWorkspaceNavigation(){
  function route(scroll){
   const hash=location.hash.slice(1);
   const anchor=document.getElementById(hash);
-  const key=views.find(view=>view.dataset.view===hash)?.dataset.view
+  const key=hash.startsWith('talents/')?'talents':views.find(view=>view.dataset.view===hash)?.dataset.view
     || anchor?.closest('[data-view]')?.dataset.view || 'builder';
   for(const view of views)view.hidden=view.dataset.view!==key;
   for(const link of links){
@@ -221,6 +221,135 @@ const myTalentLink='2253202120105003--0052230313110011';
 const talentTree=$('#talentTree');
 const talentDetail=$('#talentDetail');
 
+function keepTalentLevelValid(level=state.talentLab.level){
+ const lab=state.talentLab;
+ const minimum=requiredTalentLevel(totalTalentPoints(state.talents),lab.gift);
+ lab.level=Math.min(60,Math.max(minimum,Math.round(level)||60));
+ return minimum;
+}
+function activeTalentBuilds(){
+ const lab=state.talentLab;
+ return lab.slot==='A'?[state.talents,lab.other]:[lab.other,state.talents];
+}
+function setupTalentLab(){
+ const saved=state.talentLab||{};
+ const other=validateTalents(saved.other)?null:saved.other;
+ state.talentLab={level:Number(saved.level)||60,gift:Math.max(0,Math.min(5,Math.round(Number(saved.gift)||0))),
+  slot:other&&saved.slot==='B'?'B':'A',other,filter:['a','b','both'].includes(saved.filter)?saved.filter:'both'};
+ const status=$('#talentStatus');
+ status.insertAdjacentHTML('beforebegin',`<section class="talent-lab" aria-label="天赋方案">
+  <div class="talent-level-controls">
+   <label>角色等级<input type="number" id="talentLevel" min="1" max="60" step="1" inputmode="numeric" value="60"></label>
+   <label>才华横溢<select id="talentGift" aria-describedby="talentGiftHint">${Array.from({length:6},(_,i)=>`<option value="${i}">${i} 级</option>`).join('')}</select></label>
+   <strong id="talentBudget"></strong>
+  </div>
+  <p id="talentGiftHint" class="small">才华横溢每级让首个天赋点提前 1 级获得。角色等级调整可用天赋点，伤害仍按当前装备与技能设定。</p>
+  <div class="talent-compare-actions">
+   <button class="quiet" id="talentCompareStart" type="button">对比两套天赋</button>
+   <button class="quiet" id="talentCompareCopy" type="button" hidden>复制对比链接</button>
+   <button class="quiet" id="talentCompareStop" type="button" hidden>结束对比</button>
+  </div>
+  <div id="talentCompare" hidden>
+   <div class="talent-compare-slots" aria-label="选用天赋方案">
+    <button type="button" data-talent-slot="A">方案 A</button><button type="button" data-talent-slot="B">方案 B</button>
+   </div>
+   <div class="talent-compare-filters" aria-label="天赋差异分类">
+    <button class="quiet" type="button" data-talent-filter="a">只在 A</button><button class="quiet" type="button" data-talent-filter="b">只在 B</button><button class="quiet" type="button" data-talent-filter="both">点数不同</button>
+   </div>
+   <ul class="talent-diff-list"></ul>
+  </div>
+ </section>`);
+ const level=$('#talentLevel');
+ const setLevel=value=>{
+  if(!Number.isFinite(value))return;
+  const minimum=keepTalentLevelValid(Math.max(1,Math.min(60,value)));
+  drawTalents();save();
+  if(value<minimum)status.textContent+=` · 当前加点至少需要 ${minimum} 级，减点后可调低等级`;
+ };
+ level.addEventListener('change',()=>setLevel(Number.isFinite(level.valueAsNumber)?level.valueAsNumber:state.talentLab.level));
+ level.addEventListener('keydown',event=>{
+  const current=state.talentLab.level;
+  if(event.key==='PageUp'||event.key==='PageDown'){
+   event.preventDefault();
+   setLevel(event.key==='PageUp'?Math.floor(current/10)*10+10:Math.ceil(current/10)*10-10);
+  }
+ });
+ $('#talentGift').addEventListener('change',event=>{
+  state.talentLab.gift=Number(event.target.value);
+  drawTalents();save();
+ });
+ $('#talentCompareStart').addEventListener('click',()=>{
+  const lab=state.talentLab;
+  lab.other=state.talents.map(branch=>branch.slice());
+  lab.slot='B';
+  drawTalents();save();
+  $('[data-talent-slot="B"]').focus({preventScroll:true});
+ });
+ $('#talentCompareStop').addEventListener('click',()=>{
+  const lab=state.talentLab;
+  const retained=lab.slot;
+  lab.other=null;lab.slot='A';
+  drawTalents();save();
+  status.textContent+=` · 已保留方案 ${retained}`;
+  $('#talentCompareStart').focus({preventScroll:true});
+ });
+ $('#talentCompareCopy').addEventListener('click',()=>{
+  const encoded=activeTalentBuilds().map(serializeTalentBuild).join('~');
+  copyTalentLink('https://jamstrak.github.io/rogue-combo-simulator/#talents/'+encoded);
+ });
+ $('#talentCompare').addEventListener('click',event=>{
+  const button=event.target.closest('button');
+  if(!button)return;
+  const lab=state.talentLab;
+  const {talentSlot,talentFilter,talentDiff}=button.dataset;
+  if(talentSlot&&lab.slot!==talentSlot){
+   closeTalentDetail();
+   [state.talents,lab.other]=[lab.other,state.talents];
+   lab.slot=talentSlot;talentApply();
+  }else if(talentFilter){
+   lab.filter=talentFilter;renderTalentLab();save();
+  }else if(talentDiff){
+   const [branch,index]=talentDiff.split(',').map(Number);
+   mobileTalentBranch=branch;updateTalentTabs();
+   const node=talentAnchor(branch,index);
+   node.scrollIntoView({block:'center'});node.focus({preventScroll:true});
+   showTalentDetail(branch,index,coarseTalentPointer.matches?'sheet':'hover');
+  }
+ });
+}
+function renderTalentLab(){
+ const lab=state.talentLab,total=totalTalentPoints(state.talents),minimum=keepTalentLevelValid();
+ const budget=talentPointBudget(lab.level,lab.gift);
+ $('#talentLevel').value=lab.level;
+ $('#talentGift').value=lab.gift;
+ $('#talentBudget').textContent=`${total} / ${budget} 点 · 剩余 ${budget-total} 点 · 需要等级 ${total?minimum:'—'}`;
+ const comparing=!!lab.other;
+ $('#talentCompare').hidden=!comparing;
+ $('#talentCompareStart').hidden=comparing;
+ $('#talentCompareCopy').hidden=!comparing;
+ $('#talentCompareStop').hidden=!comparing;
+ if(!comparing)return budget;
+ const [a,b]=activeTalentBuilds();
+ const branches={A:a,B:b};
+ for(const [slot,build] of Object.entries(branches)){
+  const button=$(`[data-talent-slot="${slot}"]`),selected=lab.slot===slot;
+  const counts=build.map(ranks=>ranks.reduce((sum,rank)=>sum+rank,0));
+  button.setAttribute('aria-pressed',String(selected));
+  button.innerHTML=`<strong>方案 ${slot}</strong><span>${counts.join(' / ')}</span><small>${selected?'编辑中 · 用于推演':'点击切换编辑及推演'}</small>`;
+ }
+ const changes={a:[],b:[],both:[]};
+ talentTrees.forEach((tree,branch)=>tree.talents.forEach((talent,index)=>{
+  const rankA=a[branch][index],rankB=b[branch][index];
+  if(rankA!==rankB)changes[!rankB?'a':!rankA?'b':'both'].push({branch,index,name:talent.name,rankA,rankB});
+ }));
+ for(const [key,label] of Object.entries({a:'只在 A',b:'只在 B',both:'点数不同'})){
+  const button=$(`[data-talent-filter="${key}"]`);
+  button.setAttribute('aria-pressed',String(lab.filter===key));
+  button.textContent=`${label} ${changes[key].length}`;
+ }
+ $('.talent-diff-list').innerHTML=changes[lab.filter].map(item=>`<li><button class="quiet" type="button" data-talent-diff="${item.branch},${item.index}"><span>${item.name}</span><small>${talentTrees[item.branch].name}</small><b>A ${item.rankA} · B ${item.rankB}</b></button></li>`).join('')||'<li class="small">此分类没有差异</li>';
+ return budget;
+}
 function drawTalentBranch(tree, branchIndex){
  const nodes=tree.talents.map((talent,index)=>{
   const icon=talentVisuals[talent.name].icon;
@@ -228,6 +357,7 @@ function drawTalentBranch(tree, branchIndex){
    <button type="button" class="talent-name" data-talent-detail="${branchIndex},${index}">
     <img class="talent-icon" src="assets/talents/${icon}" alt="" loading="lazy">
     <span class="talent-rank" aria-hidden="true">0/${talent.max}</span>
+    <span class="talent-diff-rank" aria-hidden="true" hidden></span>
    </button>
   </div>`;
  });
@@ -246,12 +376,14 @@ function drawTalents(){
  const treeElement=$('#talentTree');
  if(!treeElement.children.length){
   treeElement.innerHTML=talentTrees.map(drawTalentBranch).join('');
+  setupTalentLab();
   const detail=$('#talentDetail');
   detail.hidden=true;
   detail.removeAttribute('role');
  }
  const totals=state.talents.map(ranks=>ranks.reduce((sum,rank)=>sum+rank,0));
- const total=totals.reduce((sum,rank)=>sum+rank,0);
+ const total=totals.reduce((sum,rank)=>sum+rank,0),budget=renderTalentLab();
+ const lab=state.talentLab;
  talentTrees.forEach((tree,branchIndex)=>{
   const branch=treeElement.children[branchIndex],ranks=state.talents[branchIndex];
   branch.querySelector('[data-talent-points]').textContent=`${totals[branchIndex]} 点`;
@@ -261,15 +393,19 @@ function drawTalents(){
    const prior=ranks.reduce((sum,n,i)=>sum+(tree.talents[i].row<talent.row?n:0),0);
    const prereq=talent.req===null||ranks[talent.req]===tree.talents[talent.req].max;
    const locked=prior<(talent.row-1)*5||!prereq;
-   button.parentElement.dataset.rank=rank===talent.max?'max':rank?'partial':locked?'locked':total>=51?'capped':'available';
+   button.parentElement.dataset.rank=rank===talent.max?'max':rank?'partial':locked?'locked':total>=budget?'capped':'available';
    button.querySelector('.talent-rank').textContent=`${rank}/${talent.max}`;
-   button.setAttribute('aria-label',`${talent.name}，${rank}/${talent.max} 点${locked?'，前置条件未满足':''}`);
+   const otherRank=lab.other?.[branchIndex][index],otherSlot=lab.slot==='A'?'B':'A';
+   const diff=button.querySelector('.talent-diff-rank');
+   diff.hidden=otherRank===undefined||otherRank===rank;
+   diff.textContent=diff.hidden?'':`${otherSlot} ${otherRank}`;
+   button.setAttribute('aria-label',`${talent.name}，${rank}/${talent.max} 点${locked?'，前置条件未满足':''}${diff.hidden?'':`，方案 ${otherSlot} 为 ${otherRank} 点`}`);
    if(talent.req!==null)branch.querySelector(`[data-talent-link="${index}"]`).classList.toggle('is-unlocked',prereq);
   });
  });
  updateTalentTabs();
  if(selectedTalent&&!$('#talentDetail').hidden)showTalentDetail(...selectedTalent,$('#talentDetail').dataset.mode);
- $('#talentStatus').textContent=`已分配 ${total} / 51 点 · 剩余 ${51-total} 点 · ${totals.join(' / ')}${state.talentsApplied?' · 已同步推演':''}`;
+ $('#talentStatus').textContent=`${totals.join(' / ')}${state.talentsApplied?' · 已同步推演':''}${lab.other?` · 当前方案 ${lab.slot}`:''}`;
 }
 function talentAnchor(branch,index){
  return talentTree.querySelector(`[data-talent-detail="${branch},${index}"]`);
@@ -331,7 +467,8 @@ function changeTalentRank(branch,index,delta){
  if(next<0||next>talent.max)return;
  const proposed=state.talents.map(ranks=>ranks.slice());
  proposed[branch][index]=next;
- const error=validateTalents(proposed);
+ const lab=state.talentLab;
+ const error=validateTalents(proposed)||(delta>0&&totalTalentPoints(proposed)>talentPointBudget(lab.level,lab.gift)?`角色 ${lab.level} 级的天赋点数已用完`:'');
  if(error){
   $('#talentStatus').textContent=error;
   const message=talentDetail.querySelector('.talent-tip-message');
@@ -415,17 +552,35 @@ window.addEventListener('scroll',()=>{
 },{passive:true});
 $('#talentApply').onclick=talentApply;
 $('#talentClear').onclick=()=>{closeTalentDetail();state.talents=blankTalents();talentApply();};
-function importTalents(text){
- try{const imported=parseTalentLink(text);closeTalentDetail();state.talents=imported;talentApply();}
- catch(error){$('#talentStatus').textContent='导入失败：'+error.message;}
+function importTalents(source){
+ try{
+  const lab=state.talentLab;
+  if(source.includes('~')){
+   const [a,b]=parseTalentComparison(source);
+   lab.other=a;lab.slot='B';state.talents=b;
+  }else{
+   state.talents=parseTalentLink(source);
+  }
+  closeTalentDetail();talentApply();
+  return true;
+ }catch(error){$('#talentStatus').textContent='导入失败：'+error.message;return false;}
+}
+async function copyTalentLink(link){
+ const input=$('#talentLink'),status=$('#talentStatus');
+ input.value=link;
+ try{await navigator.clipboard.writeText(link);status.textContent='已复制链接。';}
+ catch{input.focus();input.select();status.textContent='链接已填入输入框，可手动复制。';}
 }
 $('#talentImport').onclick=()=>importTalents($('#talentLink').value);
 $('#talentPreset').onclick=()=>{ $('#talentLink').value='https://wowhandbook.com/zh/classes/rogue/talents/#'+myTalentLink;importTalents(myTalentLink); };
-$('#talentCopy')?.addEventListener('click',async()=>{
- const link='https://wowhandbook.com/zh/classes/rogue/talents/#'+state.talents.map(ranks=>ranks.join('').replace(/0+$/,'')).join('-');
- const input=$('#talentLink');input.value=link;
- try{await navigator.clipboard.writeText(link);$('#talentStatus').textContent='已复制当前加点链接。';}
- catch{input.focus();input.select();$('#talentStatus').textContent='当前加点链接已填入输入框，可手动复制。';}
+$('#talentCopy')?.addEventListener('click',()=>{
+ const code=serializeTalentBuild(state.talents);
+ copyTalentLink('https://wowhandbook.com/zh/classes/rogue/talents/#'+(code||'0'));
 });
+function openSharedTalentBuild(){
+ if(location.hash.startsWith('#talents/')&&importTalents(location.hash))history.replaceState(null,'','#talents');
+}
+window.addEventListener('hashchange',openSharedTalentBuild);
+openSharedTalentBuild();
 const talentOverrideIds=['reduction','flawlessReduction','dirtyDeeds','composure','exposeRank','ruthlessRank','relentlessRank','initiativeRank','sealRank','bootRank','flashRank','punctureRank','ambushCritRank','efficientRank','dirtyTricksRank','mutilate','adrenaline','coldblood','ghost'];
 talentOverrideIds.forEach(id=>$('#'+id).addEventListener('change',()=>{if(state.talentsApplied){state.talentsApplied=false;drawTalents();save();}}));

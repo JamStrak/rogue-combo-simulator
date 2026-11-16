@@ -13,8 +13,47 @@ function validateTalents(a){
  }
  return total>51?'总天赋点数不能超过 51 点':'';
 }
-function parseTalentLink(s){let h=String(s).trim().split('#').pop(),parts=h.split('-');if(parts.length!==3||parts.some(p=>!/^[0-5]*$/.test(p)))throw Error('请输入完整的盗贼天赋链接或三系编码');let a=blankTalents();parts.forEach((part,x)=>{if(part.length>a[x].length)throw Error('编码长度不正确');[...part].forEach((v,i)=>a[x][i]=Number(v));});let e=validateTalents(a);if(e)throw Error(e);return a;}
+function totalTalentPoints(build){
+ return build.reduce((total,branch)=>total+branch.reduce((sum,rank)=>sum+rank,0),0);
+}
+function talentPointBudget(level,gift=0){return Math.min(51,Math.max(0,level-(9-gift)));}
+function requiredTalentLevel(points,gift=0){return points?9-gift+points:1;}
+function serializeTalentBuild(build){
+ return build.map(branch=>branch.join('').replace(/0+$/,'')).join('-').replace(/-+$/,'');
+}
+function readTalentCode(source){
+ let code=String(source).trim();
+ if(/^https?:\/\//i.test(code)){
+  const url=new URL(code);
+  const handbook=url.hostname==='wowhandbook.com'&&/\/classes\/rogue\/talents\/?$/.test(url.pathname);
+  const simulator=url.hostname==='jamstrak.github.io'&&/^\/rogue-combo-simulator\/?$/.test(url.pathname);
+  if(!handbook&&!simulator)throw Error('请输入盗贼天赋模拟器或 WoW Handbook 的加点链接');
+  code=url.hash;
+ }
+ return code.replace(/^#/,'').replace(/^talents\//,'');
+}
+function parseTalentBuild(code){
+ const parts=code.split('-'),build=blankTalents();
+ if(parts.length>3||parts.some(part=>!/^[0-5]*$/.test(part)))throw Error('天赋编码无效');
+ parts.forEach((part,branch)=>{
+  if(part.length>build[branch].length)throw Error('编码长度不正确');
+  [...part].forEach((digit,index)=>build[branch][index]=Number(digit));
+ });
+ const error=validateTalents(build);
+ if(error)throw Error(error);
+ return build;
+}
+function parseTalentLink(source){
+ const code=readTalentCode(source);
+ if(!code)throw Error('请输入盗贼天赋链接或加点编码');
+ return parseTalentBuild(code);
+}
+function parseTalentComparison(source){
+ const parts=readTalentCode(source).split('~');
+ if(parts.length!==2)throw Error('请输入同时包含 A 与 B 的天赋对比链接');
+ return parts.map(parseTalentBuild);
+}
 function applyTalentConfig(a,c){const ranks={};talentTrees.forEach((tr,x)=>tr.talents.forEach((t,i)=>ranks[t.name]=a[x][i]));const r=n=>ranks[n]||0;
  const before=Number(c.appliedVigor||0), after=r('精力'), wasFull=Number(c.start)>=Number(c.max);c.max=Math.max(1,Number(c.max)+5*(after-before));if(wasFull)c.start=c.max;else c.start=Math.min(c.start,c.max);c.appliedVigor=after;
  Object.assign(c,{reduction:10*r('卑鄙'),composure:5*r('沉着'),exposeRank:r('强化破甲'),ruthlessRank:r('无情'),relentlessRank:r('无情打击'),initiativeRank:r('先发制人'),sealRank:r('封印命运'),bootRank:r('靴中剑'),flashRank:r('刃光乍现'),punctureRank:r('穿刺之伤'),ambushCritRank:r('强化伏击'),efficientRank:r('高效打击'),dirtyTricksRank:r('邪恶计谋'),flawlessReduction:15*r('完美处刑'),mutilate:!!r('毁伤'),adrenaline:!!r('冲动'),coldblood:!!r('冷血'),ghost:!!r('鬼魅攻击'),premedTalent:!!r('预谋'),preparationTalent:!!r('伺机待发'),hemoTalent:!!r('出血'),deathmarkTalent:!!r('死亡印记'),gougeRank:r('强化凿击'),elusivenessRank:r('飘忽不定'),maliceRank:r('恶意'),lethalityRank:r('致命偷袭'),slashRank:r('劈斩'),enforceTalents:true});return c;}
-if(typeof module!=='undefined')module.exports={talentTrees,modeledTalents,blankTalents,validateTalents,parseTalentLink,applyTalentConfig};
+if(typeof module!=='undefined')module.exports={talentTrees,modeledTalents,blankTalents,validateTalents,parseTalentLink,parseTalentComparison,totalTalentPoints,talentPointBudget,requiredTalentLevel,serializeTalentBuild,applyTalentConfig};
