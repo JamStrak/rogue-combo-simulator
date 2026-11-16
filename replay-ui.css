@@ -232,3 +232,30 @@
 .combat-combo-orbs i.active { border-color: #ffdf91; background: radial-gradient(circle at 35% 30%, #fff4b9, #eaa62c 58%, #a55b17); box-shadow: 0 0 5px #f5c05caa; }
 .combat-combo strong { color: #ffe09b; font-variant-numeric: tabular-nums; }
 @media (max-width: 600px) { .combat-arena { height: 140px; } .combat-combo { left: clamp(68px, calc(65% + 27px), calc(100% - 68px)); } }
+
+/* 每个动作单独呈现；演示停留不改变模拟时间。 */
+.combat-cast-cue {
+  position: absolute; z-index: 5; top: 38px; left: 2px;
+  display: grid; gap: 3px; width: max-content; max-width: min(54%, 190px);
+  padding: 5px 7px; border-left: 2px solid #e5c077; border-radius: 3px;
+  background: #101910ed; box-shadow: 0 2px 8px #0008;
+  color: #fff3cc; line-height: 1.2; opacity: 0; pointer-events: none;
+}
+.combat-cast-cue.visible { animation: combat-cue-fade var(--cue-duration, 800ms) ease-in-out both; }
+.combat-cast-cue strong { font-size: clamp(13px, 2vw, 17px); overflow-wrap: anywhere; }
+.combat-cast-details { display: flex; flex-wrap: wrap; gap: 2px 5px; font-size: 10px; font-variant-numeric: tabular-nums; }
+.combat-cast-details span { white-space: nowrap; }
+.combat-cast-details [data-kind="energy"] { color: #ffe386; }
+.combat-cast-details [data-kind="combo"] { color: #ffca7b; }
+.combat-cast-details [data-kind="damage"] { color: #fff1a8; }
+.combat-cast-details [data-kind="error"] { color: #ff9e95; }
+.combat-cast-details [data-kind="neutral"] { color: #becbb9; }
+.combat-stage[data-playback="paused"] .combat-cast-cue { animation-play-state: paused; }
+@keyframes combat-cue-fade {
+  0% { opacity: 0; transform: translateY(3px); }
+  15%, 75% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-3px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .combat-cast-cue.visible { animation: none; opacity: 1; }
+}

@@ -22,8 +22,12 @@ function makeReplay(sequence, simulation, damage, cfg) {
  }
  const order={bleed:0,white:1,action:2,wait:2,error:2};
  events.sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
+ const actionByIndex=new Map(actions.map(row=>[row.index,row]));
  let cumulative=0;
- for(const event of events){cumulative+=event.damage||0;event.cumulative=cumulative;}
+ for(const [index,event] of events.entries()){
+  cumulative+=event.damage||0;event.cumulative=cumulative;
+  if(['action','wait','error'].includes(event.type))actionByIndex.get(event.index).eventIndex=index;
+ }
  return {
   actions,events,stepCount:sequence.length,
   duration:Math.max(0,simulation.time||0,damage.endTime||0,simulation.controlEnd||0),
@@ -31,12 +35,12 @@ function makeReplay(sequence, simulation, damage, cfg) {
   stopped:!!simulation.stopped
  };
 }
-function replayAt(model,time) {
+function replayAt(model,time,seen=Infinity) {
  const t=Math.max(0,Math.min(model.duration,Number(time)||0));
  const {max,regen}=model.cfg;
  let previous=null,next=null;
  for(const row of model.actions){
-  if(row.time>t+1e-9){next=row;break;}
+  if(row.time>t+1e-9||row.eventIndex>=seen){next=row;break;}
   previous=row;
  }
  const lastEnergy=previous?.after??Math.min(max,model.cfg.start);
@@ -55,6 +59,7 @@ function replayAt(model,time) {
  const stealth=previous?.stealth??model.cfg.startStealth;
  let lo=0,hi=model.events.length;
  while(lo<hi){const mid=(lo+hi)>>1;if(model.events[mid].time<=t+1e-9)lo=mid+1;else hi=mid;}
+ lo=Math.min(lo,seen);
  return {
   time:t,energy,cp:Math.max(0,(previous?.cp||0)-(previous?.premedPending&&t>=previous.premedUntil?previous.premedPending:0)),controlRemaining,damage:lo?model.events[lo-1].cumulative:0,
   step,gap,energyWaiting,timedAction,inCombat,autoAttacking,combatRemaining,stealth,blocked:previous?.error?previous:null,previous
@@ -63,7 +68,7 @@ function replayAt(model,time) {
 if(typeof module!=='undefined')module.exports={makeReplay,replayAt};
 
 // 控件只播放当前已计算的结果。改动配置时由主界面重置。
-const replayPlayer={model:null,status:'ready',time:0,seen:0,frame:0,lastStamp:null};
+const replayPlayer={model:null,status:'ready',time:0,seen:0,frame:0,lastStamp:null,holdMs:0};
 function setupReplay(){
  const byId=id=>document.getElementById(id);
  const play=byId('combatPlay'),reset=byId('combatReset'),hp=byId('combatHealthInput'),speed=byId('combatSpeed');
@@ -72,6 +77,10 @@ function setupReplay(){
  const energyBar=byId('combatEnergyBar'),energyText=byId('combatEnergyText');
  const progress=byId('combatProgress'),timeText=byId('combatTime'),damageText=byId('combatDamage');
  const combo=byId('combatCombo'),comboText=byId('combatComboText'),comboOrbs=[...combo.querySelectorAll('i')];
+ const cue=document.createElement('div');
+ cue.className='combat-cast-cue';
+ cue.setAttribute('aria-live','polite');
+ stage.querySelector('.combat-arena').append(cue);
  const stepBox=document.createElement('div');
  stepBox.className='combat-step';
  stepBox.innerHTML='<span>连招步骤</span><strong id="combatStepIndex">—</strong><b id="combatStepName">等待播放</b>';
@@ -141,7 +150,10 @@ function setupReplay(){
   const model=replayPlayer.model;
   if(!model)return;
   const ready=replayPlayer.status==='ready';
-  const snap=ready?{energy:Math.min(model.cfg.max,model.cfg.start),damage:0,cp:0}:replayAt(model,replayPlayer.time);
+  const snap=ready?{energy:Math.min(model.cfg.max,model.cfg.start),damage:0,cp:0}:replayAt(model,replayPlayer.time,replayPlayer.seen);
+  if(!ready&&replayPlayer.holdMs>0&&snap.previous){
+   snap.step=snap.previous;snap.timedAction=null;snap.gap=null;snap.energyWaiting=false;
+  }
   const maximum=maxHealth();
   const remaining=Math.max(0,maximum-snap.damage);
   const energy=Math.max(0,Math.min(model.cfg.max,snap.energy));
@@ -163,6 +175,7 @@ function setupReplay(){
    comboOrbs.forEach((orb,index)=>orb.classList.toggle('active',index<cp));
   }
   paintDiagnostics(model,snap,ready);
+  stage.dataset.playback=replayPlayer.status;
   const labels={playing:'暂停',paused:'继续',done:'重新播放',ready:'播放连招'};
   setText(play,labels[replayPlayer.status]);
   play.disabled=!model.events.length;
@@ -172,8 +185,11 @@ function setupReplay(){
   replayPlayer.status='ready';
   replayPlayer.time=0;
   replayPlayer.seen=0;
+  replayPlayer.holdMs=0;
   logBox.replaceChildren();
   floatBox.replaceChildren();
+  cue.replaceChildren();
+  cue.classList.remove('visible');
   stage.classList.remove(...hitClasses);
   setText(actionText,'—');
   paint();
@@ -183,6 +199,27 @@ function setupReplay(){
   if(event.type==='bleed')return event.id==='garrote'?'绞喉流血':'割裂流血';
   if(event.type==='error')return `${event.name} · 中断`;
   return event.id==='wait'?'等待结束':event.name;
+ }
+ function showCue(event,before,after,duration){
+  const row=replayPlayer.model.actions.find(action=>action.index===event.index);
+  const title=document.createElement('strong');
+  title.textContent=eventLabel(event);
+  const detail=document.createElement('span');
+  detail.className='combat-cast-details';
+  const add=(text,kind)=>{const el=document.createElement('span');el.textContent=text;el.dataset.kind=kind;detail.append(el);};
+  const energyBefore=row?.before??before.energy,energyAfter=row?.after??after.energy;
+  const cpBefore=row?.cpBefore??before.cp,cpAfter=after.cp;
+  const attemptedEnergyChange=Number(row?.cost)>0||row?.notes?.some(note=>/恢复 .*能量/.test(note));
+  if(Math.abs(energyAfter-energyBefore)>1e-8||attemptedEnergyChange)add(`能量 ${number(energyBefore)} → ${number(energyAfter)}`,'energy');
+  if(cpBefore!==cpAfter)add(`连击 ${number(cpBefore)} → ${number(cpAfter)}`,'combo');
+  if(event.damage>0)add(`伤害 ${number(event.damage)}${event.crit===true||event.critMode==='rolled-crit'?' 暴击':''}`,'damage');
+  if(event.type==='error')add('未施放','error');
+  if(!detail.childNodes.length)add('状态已更新','neutral');
+  cue.classList.remove('visible');
+  cue.replaceChildren(title,detail);
+  cue.style.setProperty('--cue-duration',`${duration}ms`);
+  void cue.offsetWidth;
+  cue.classList.add('visible');
  }
  function present(event,floatLanes){
   const title=eventLabel(event),amount=event.damage||0;
@@ -230,22 +267,38 @@ function setupReplay(){
  }
  function step(stamp){
   if(replayPlayer.status!=='playing')return;
-  if(replayPlayer.lastStamp!==null){
-   const elapsed=Math.max(0,stamp-replayPlayer.lastStamp)/1000;
-   replayPlayer.time=Math.min(replayPlayer.model.duration,replayPlayer.time+elapsed*(Number(speed.value)||1));
-  }
+  let elapsed=replayPlayer.lastStamp===null?0:Math.max(0,stamp-replayPlayer.lastStamp);
   replayPlayer.lastStamp=stamp;
-  const events=replayPlayer.model.events,hits=new Set(),floatLanes=new Map();
-  while(replayPlayer.seen<events.length&&events[replayPlayer.seen].time<=replayPlayer.time+1e-9){
-   const hit=present(events[replayPlayer.seen++],floatLanes);
-   if(hit)hits.add(hit);
+  if(replayPlayer.holdMs>0){
+   replayPlayer.holdMs=Math.max(0,replayPlayer.holdMs-elapsed);
+   if(replayPlayer.holdMs>0){paint();replayPlayer.frame=requestAnimationFrame(step);return;}
+   elapsed=0;
   }
+  const model=replayPlayer.model,events=model.events,hits=new Set(),floatLanes=new Map();
+  const target=Math.min(model.duration,replayPlayer.time+elapsed/1000*(Number(speed.value)||1));
+  let held=false;
+  while(replayPlayer.seen<events.length&&events[replayPlayer.seen].time<=target+1e-9){
+   const event=events[replayPlayer.seen];
+   replayPlayer.time=Math.max(replayPlayer.time,event.time);
+   const before=replayAt(model,replayPlayer.time,replayPlayer.seen);
+   const hit=present(event,floatLanes);
+   replayPlayer.seen++;
+   if(hit)hits.add(hit);
+   if(['action','wait','error'].includes(event.type)){
+    const after=replayAt(model,replayPlayer.time,replayPlayer.seen);
+    replayPlayer.holdMs=Math.max(480,800/(Number(speed.value)||1));
+    showCue(event,before,after,replayPlayer.holdMs);
+    held=true;
+    break;
+   }
+  }
+  if(!held)replayPlayer.time=target;
   if(hits.size){
    stage.classList.remove(...hitClasses);
    void stage.offsetWidth;
    stage.classList.add(...hits);
   }
-  if(replayPlayer.time>=replayPlayer.model.duration){replayPlayer.status='done';stopFrame();}
+  if(!held&&replayPlayer.time>=model.duration&&replayPlayer.seen>=events.length){replayPlayer.status='done';stopFrame();}
   paint();
   if(replayPlayer.status==='playing')replayPlayer.frame=requestAnimationFrame(step);
  }
