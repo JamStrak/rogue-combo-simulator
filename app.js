@@ -171,17 +171,27 @@ function drawDraftEnergy(result){
   if(input.valueAsNumber!==Number(value))input.value=value;
  }
 }
+function autoWaitCard(row){
+ const wait=row?.autoEnergyWait;
+ if(!wait||wait.seconds<=0)return '';
+ const action=wait.autoAttacking?(state.damage.weapon.enabled?'平砍回能':'平砍中（伤害计算关闭）'):'停手回能';
+ const gap=wait.controlGap>0?`控制空档 ${fmt(wait.controlGap)} 秒`:'等待期间无新增控制空档';
+ const reason=wait.gapReasons?.length?` · ${[...new Set(wait.gapReasons.map(item=>item.cause))].map(escapeHtml).join('、')}`:'';
+ return `<div class="auto-wait-card" role="note"><div class="auto-wait-title"><strong>自动额外等待 · ${action}</strong><b>${fmt(wait.seconds)} 秒</b></div><div>能量 ${fmt(wait.startEnergy)} → ${fmt(wait.endEnergy)} <span>回能 +${fmt(wait.energyGained)}</span></div><div class="${wait.controlGap>0?'auto-wait-gap':''}">${gap}${reason}</div></div>`;
+}
 function drawNearbyResult(v,damage){
  const last=v.rows.at(-1), panel=$('#livePreview'),byDamage=new Map(damage.rows.map(row=>[row.index,row]));
  drawDraftEnergy(v);
  if(!last){panel.innerHTML='<div class="live-title"><strong>即时推演</strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div><div class="live-empty">添加技能后显示本步伤害和控制。</div>';}
  else{
   const blocked=v.stopped?' · 已中断'+(state.sequence.length>last.index+1?'，后续未执行':''):'';
-  panel.innerHTML=`<div class="live-title"><strong>第 ${last.index+1} 步 · ${escapeHtml(last.name)} <small>${fmt(last.time)}秒${blocked}</small></strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div>${stageMetrics(last,byDamage.get(last.index))}<div class="stage-flags">${stageFlags(last,2)}</div>`;
+  panel.innerHTML=`<div class="live-title"><strong>第 ${last.index+1} 步 · ${escapeHtml(last.name)} <small>${fmt(last.time)}秒${blocked}</small></strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div>${autoWaitCard(last)}${stageMetrics(last,byDamage.get(last.index))}<div class="stage-flags">${stageFlags(last,2)}</div>`;
  }
  const byIndex=new Map(v.rows.map(row=>[row.index,row]));
+ $$('#sequence .auto-wait-card').forEach(el=>el.remove());
  $$('#sequence [data-step-preview]').forEach(el=>{
   const row=byIndex.get(Number(el.dataset.stepPreview)),dmg=row&&byDamage.get(row.index);
+  if(row?.autoEnergyWait)el.closest('.seqrow').insertAdjacentHTML('beforebegin',autoWaitCard(row));
   el.innerHTML=row?`${stageMetrics(row,dmg)}<div class="stage-flags">${stageFlags(row)}</div>${stageDetails(row,dmg)}`:'<span class="note-warning">前面的步骤已中断，尚未执行</span>';
  });
 }
@@ -206,7 +216,7 @@ function drawGearOverview(){
 function drawResult(){drawGearOverview();const v=simulate(state.sequence,state.cfg,state.book);drawPalette(v);const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const damage=calculateDamage(state.sequence,v,state.cfg,state.damage),damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
 $('#damageMethod').textContent='平砍按武器速度和面板攻击强度估算，暴击按装备设置结算；敌对技能开启自动攻击，停砍、避战、消失、脱战、凿击和致盲会停手，之后敌对技能重新开始计时。末步控制期间的平砍单列，不随流血尾伤延长。刺击按副手武器和可调整倍率估算，是否额外受副手惩罚有待验证。技能按选定模式计算；忽略护甲、命中、躲闪、武器触发和毒药；流血跳伤仍可能提前打破控制但尚未模拟。计入刺击、伏击、鬼魅攻击、出血、毁伤、背刺、邪恶攻击、凿击、刺骨的直接伤害，及绞喉、割裂的逐跳流血。'+(state.damage.bleedCritMode==='random'?'流血每跳独立掷骰，同种子结果可复现，可重新掷骰。':'流血按暴击概率计算期望。')+'直接攻击有掷骰则沿用，否则按期望估算。相同流血重施覆盖旧效果；爆发窗口含起点、不含终点。平均值以推演结束和最后伤害时刻中较晚者为分母。未计毒药、武器触发及未自动套用的伤害天赋。';
 const ticks=damage.events.filter(event=>event.type==='bleed');$('#bleedTimeline').innerHTML=ticks.length?`<p class="small">${state.damage.bleedCritMode==='random'?'逐跳独立判定暴击':'每跳显示含暴击概率的期望伤害'}；总计 ${ticks.length} 跳，列出前 ${Math.min(ticks.length,1000)} 跳。</p><div class="bleed-timeline">${ticks.slice(0,1000).map(event=>`<span>${fmt(event.time)} 秒 · ${state.book[event.id].name} <b${event.crit===true?' class="note-success"':''}>${fmt(event.damage)}${event.crit===true?' 暴击':event.crit===false?' 普通':' 期望'}</b></span>`).join('')}</div>`:'<p class="small">当前推演没有流血跳伤。</p>';
-$('#warnings').textContent=state.cfg.dr?'PvP 递减采用假设：同组第 2 / 3 次分别按设定比例，第 4 次免疫；重置从控制结束计时。':'PvP 递减当前关闭，控制时长可能高估。';$('#rows').innerHTML=v.rows.length?v.rows.map(x=>{const dmg=damageRows.get(x.index);return `<article class="stage-card${x.error?' error':''}"><div class="stage-head"><strong><span> ${String(x.index+1).padStart(2,'0')} </span>${escapeHtml(x.name)}</strong><time>${fmt(x.time)} 秒</time></div>${stageMetrics(x,dmg)}<div class="stage-flags">${stageFlags(x)}</div>${stageDetails(x,dmg)}</article>`}).join(''):'<div class="empty">添加技能后自动计算</div>';drawNearbyResult(v,damage);drawComboComparison();replayPlayer.update(state.sequence,v,damage,state.cfg);}
+$('#warnings').textContent=state.cfg.dr?'PvP 递减采用假设：同组第 2 / 3 次分别按设定比例，第 4 次免疫；重置从控制结束计时。':'PvP 递减当前关闭，控制时长可能高估。';$('#rows').innerHTML=v.rows.length?v.rows.map(x=>{const dmg=damageRows.get(x.index);return `${autoWaitCard(x)}<article class="stage-card${x.error?' error':''}"><div class="stage-head"><strong><span> ${String(x.index+1).padStart(2,'0')} </span>${escapeHtml(x.name)}</strong><time>${fmt(x.time)} 秒</time></div>${stageMetrics(x,dmg)}<div class="stage-flags">${stageFlags(x)}</div>${stageDetails(x,dmg)}</article>`}).join(''):'<div class="empty">添加技能后自动计算</div>';drawNearbyResult(v,damage);drawComboComparison();replayPlayer.update(state.sequence,v,damage,state.cfg);}
 function escapeHtml(value){return String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
 function savedCombos(){return state.savedCombos.filter(x=>x&&typeof x.id==='string'&&typeof x.name==='string'&&Array.isArray(x.sequence)&&x.sequence.every(a=>a&&state.book[a.id]));}
 function drawLibrary(){

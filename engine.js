@@ -103,10 +103,10 @@ function simulate(sequence, cfg, book=skills, options={}) {
   const entry=sequence[i], s=book[entry.id]; if(!s){stopped=true;break;}
   const startTime=t, startGap=gap, combatAvoidedBefore=combatAvoided;
   gapReasons=[];
-  let energyWait=0, energyShortage=false, autoAttackChangedAt=null, combatChangedAt=null;
+  let energyWait=0, energyShortage=false, autoEnergyWait=null, autoAttackChangedAt=null, combatChangedAt=null;
   const appendRow=(before,notes,extra)=>rows.push({
    index:i,id:entry.id,name:s.name,startTime,time:t,before,after:energy,cp,controlEnd,gap,
-   notes:[...notes,...gapNote()],energyShortage,energyWait,controlGap:gap-startGap,gapReasons,
+   notes:[...notes,...gapNote()],energyShortage,energyWait,autoEnergyWait,controlGap:gap-startGap,gapReasons,
    autoAttackChangedAt,combatChangedAt,combatAvoidedBefore,...status(),...extra
   });
   const setAutoAttack=active=>{
@@ -166,7 +166,11 @@ function simulate(sequence, cfg, book=skills, options={}) {
     energyWait=delay;
     totalEnergyWait+=delay;
     if(inCombat&&delay>0)combatAvoided=0;
-    recovered+=advance(t+delay,'能量不足，等待回能期间');
+    const waitStart=t, waitEnergy=energy, waitGap=gap, waitReasons=gapReasons.length;
+    const waitAttacking=autoAttacking;
+    const gained=advance(t+delay,'能量不足，等待回能期间');
+    autoEnergyWait={seconds:delay,energyGained:gained,startTime:waitStart,endTime:t,startEnergy:waitEnergy,endEnergy:energy,autoAttacking:waitAttacking,controlGap:gap-waitGap,gapReasons:gapReasons.slice(waitReasons).map(reason=>({...reason}))};
+    recovered+=gained;
     costInfo=skillCost(entry.id,cfg,book,energy,inCombat);
     cost=costInfo.cost;
     notes.push(`能量不足，等待 ${fmt(delay)} 秒`);
