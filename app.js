@@ -113,7 +113,7 @@ function renderNotes(notes,error=false){
   const warning=error||/能量不足|可反制空档|控制空档|控制免疫|可能提前打破/.test(note);
   const overflow=!warning&&/连击点溢出/.test(note);
   const success=!warning&&!overflow&&!/未触发/.test(note)&&/暴击 [\d.]+%：是|(?:：|封印命运)触发|强化破甲：5 星返还/.test(note);
-  const safe=note.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+  const safe=note.replace(/暴击 (?=[\d.]+%：)/g,'技能暴击 ').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
   return `<span${warning?' class="note-warning"':overflow?' class="note-overflow"':success?' class="note-success"':''}>${safe}</span>`;
  }).join('；')||'—';
 }
@@ -177,12 +177,12 @@ function whiteHitTimes(hits){return hits.length?hits.map(hit=>`${fmt(hit.time)}�
 // 标记只采用已判定的结果；按伤害行时间归属平砍与流血，不把概率期望视为暴击。
 function stepProcs(row,dmg){
  const crit=[];
- if(!row.error&&dmg?.directDamage>0&&dmg.critMode==='rolled-crit'){
+ if(!row.error&&(row.critOutcome?.critical===true||dmg?.critMode==='rolled-crit')){
   const hands=[row.critOutcome?.main===true?'主手':'',row.critOutcome?.off===true?'副手':''].filter(Boolean).join('、');
-  crit.push(`${row.name}技能${hands?'（'+hands+'）':''}暴击`);
+  crit.push({source:'skill',description:`${row.name}技能${hands?'（'+hands+'）':''}暴击`});
  }
- for(const hit of dmg?.whiteHits||[])if(hit.crit===true)crit.push(`${fmt(hit.time)} 秒${hit.hand==='main'?'主手':'副手'}平砍暴击`);
- for(const hit of dmg?.bleedHits||[])if(hit.crit===true)crit.push(`${fmt(hit.time)} 秒${state.book[hit.id]?.name||hit.id}流血暴击`);
+ for(const hit of dmg?.whiteHits||[])if(hit.crit===true)crit.push({source:'white',description:`${fmt(hit.time)} 秒${hit.hand==='main'?'主手':'副手'}平砍暴击`});
+ for(const hit of dmg?.bleedHits||[])if(hit.crit===true)crit.push({source:'bleed',description:`${fmt(hit.time)} 秒${state.book[hit.id]?.name||hit.id}流血暴击`});
  const talents=[];
  if(!row.error){
   const names=['无情打击','封印命运','先发制人','无情','靴中剑','穿刺之伤','强化破甲'];
@@ -194,13 +194,17 @@ function stepProcs(row,dmg){
  return {crit,talents};
 }
 function procDetail(row,dmg){
- const {crit,talents}=stepProcs(row,dmg),items=[...crit,...talents.map(t=>t.description)];
- return items.length?`<div class="seq-proc-detail"><strong>本步触发</strong><ul>${items.map(item=>`<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`:'';
+ const {crit,talents}=stepProcs(row,dmg),items=[...crit.map(c=>c.description),...talents.map(t=>t.description)];
+ const distinction=row.critOutcome?.critical===false&&crit.some(c=>c.source!=='skill')?'<p>本技能未暴击；平砍和流血暴击不触发封印命运。</p>':'';
+ return items.length?`<div class="seq-proc-detail"><strong>本步触发</strong><ul>${items.map(item=>`<li>${escapeHtml(item)}</li>`).join('')}</ul>${distinction}</div>`:'';
 }
 function procMarkers(row,dmg,index){
  const {crit,talents}=stepProcs(row,dmg),button=(cls,label,content)=>`<button type="button" class="seq-proc-marker ${cls}" data-proc-detail="${index}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}，查看本步详情">${content}</button>`;
  const markers=[];
- if(crit.length)markers.push(button('seq-crit-marker',crit.join('；'),'<span aria-hidden="true">暴</span>'));
+ for(const [source,label] of [['skill','技能暴'],['white','平砍暴'],['bleed','流血暴']]){
+  const matching=crit.filter(c=>c.source===source);
+  if(matching.length)markers.push(button(`seq-crit-marker seq-crit-${source}`,matching.map(c=>c.description).join('；'),`<span aria-hidden="true">${label}</span>`));
+ }
  for(const t of talents){const icon=talentVisuals[t.name]?.icon;markers.push(button('seq-talent-marker',t.description,`${icon?`<img src="assets/talents/${escapeHtml(icon)}" alt="">`:''}<span>${escapeHtml(t.name)}</span>`));}
  return markers.length?`<div class="seq-proc-markers">${markers.join('')}</div>`:'';
 }

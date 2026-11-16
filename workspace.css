@@ -252,8 +252,11 @@ main{width:100%;max-width:1370px;margin:0 auto;padding:18px 20px 0}
 #sequence .seq-proc-marker:focus-visible{outline:2px solid #f7d979;outline-offset:2px}
 #sequence .seq-talent-marker img{display:block;width:100%;height:100%;object-fit:cover;border-radius:3px}
 #sequence .seq-talent-marker>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-#sequence .seq-crit-marker{border-color:#f4a64c;background:radial-gradient(circle,#f2c15b,#8e3b19 78%);color:#fff5c4;font-size:14px;font-weight:900;text-shadow:0 1px 2px #412208;box-shadow:0 0 7px #d58d3370}
+#sequence .seq-crit-marker{width:auto;min-width:46px;padding:0 5px;border-color:#f4a64c;background:#74401e;color:#fff1c2;font-size:11px;font-weight:800;white-space:nowrap}
+#sequence .seq-crit-white{border-color:#b9c7d0;background:#374d59;color:#f0f8ff}
+#sequence .seq-crit-bleed{border-color:#df858a;background:#69303b;color:#ffe4e5}
 .sequence-detail .seq-proc-detail{margin:0 0 8px;padding:7px 9px;border:1px solid #5b714d;border-radius:4px;background:#1d2c20;color:#e1ecd8}
 .sequence-detail .seq-proc-detail strong{color:#c5e5aa}
 .sequence-detail .seq-proc-detail ul{margin:4px 0 0;padding-left:18px}
-@media(max-width:600px){#sequence .seq-proc-marker{width:32px;height:32px}}
+.sequence-detail .seq-proc-detail p{margin:5px 0 0;color:#c9d3c8}
+@media(max-width:600px){#sequence .seq-proc-marker{width:32px;height:32px}#sequence .seq-crit-marker{width:auto}}
