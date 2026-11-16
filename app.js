@@ -54,7 +54,8 @@ function drawPalette(){
    }
   }
   const hint=escapeHtml(`${s.name}：${label}`);
-  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}">${escapeHtml(s.name)}<span>(${cost})</span></button>`;
+  const icon=skillIcons[id];
+  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}"><span class="skill-picture">${icon?`<img src="${icon}" alt="" loading="lazy">`:''}<span class="skill-cost">${cost}</span></span><span class="skill-name">${escapeHtml(s.name)}</span></button>`;
  }).join('');
 }
 function updateSkillCostHint(){const id=$('#editSkill').value,current=state.book[id].cost,standard=initial.book[id].cost;$('#editBaseNote').textContent=Number(current)!==Number(standard)?`当前基础消耗 ${fmt(current)}，默认 ${fmt(standard)}；天赋和被动会继续减免。`:'填写未减免的基础消耗；天赋和被动会另行计算。';}
@@ -66,7 +67,7 @@ function sequenceControls(entry,index){
  if(entry.id==='stealth')return '<span class="offgcd">脱战后可潜行</span>';
  return `<label class="offgcd"><input type="checkbox" data-off="${index}" ${entry.offGcd?'checked':''}> 不占公共CD</label>`;
 }
-function drawSequence(){const dest=$('#sequence');if(!state.sequence.length){dest.innerHTML='<div class="empty">从上方选择技能，开始构建你的连招。</div>';return}dest.innerHTML=state.sequence.map((a,i)=>`<div class="seqrow"><span class="seqindex">${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(state.book[a.id].name)}</strong>${sequenceControls(a,i)}<div class="rowbuttons"><button data-up="${i}" aria-label="上移" ${i===0?'disabled':''}>↑</button><button data-down="${i}" aria-label="下移" ${i===state.sequence.length-1?'disabled':''}>↓</button><button data-del="${i}" aria-label="移除">×</button></div><div class="seq-preview" data-step-preview="${i}"></div></div>`).join('');}
+function drawSequence(){const dest=$('#sequence');if(!state.sequence.length){dest.innerHTML='<div class="empty">从上方选择技能，开始构建你的连招。</div>';return}dest.innerHTML=state.sequence.map((a,i)=>`<div class="seqrow"><span class="seqindex">${String(i+1).padStart(2,'0')}</span><strong>${skillIcons[a.id]?`<img class="sequence-icon" src="${skillIcons[a.id]}" alt="" loading="lazy">`:''}${escapeHtml(state.book[a.id].name)}</strong>${sequenceControls(a,i)}<div class="rowbuttons"><button data-up="${i}" aria-label="上移" ${i===0?'disabled':''}>↑</button><button data-down="${i}" aria-label="下移" ${i===state.sequence.length-1?'disabled':''}>↓</button><button data-del="${i}" aria-label="移除">×</button></div><div class="seq-preview" data-step-preview="${i}"></div></div>`).join('');}
 function drawCompare(){const c=state.cfg,b=state.book;$('#costCompare').innerHTML=['cheap','ambush','garrote'].map(id=>{let full=skillCost(id,c,b,c.max,false).cost, normal=skillCost(id,c,b,c.max,true).cost;return `<article><span>${b[id].name}</span><p><small>脱战满能量</small><b>${fmt(full)}</b></p><p><small>战斗中 / 未满</small><b>${fmt(normal)}</b></p></article>`}).join('');}
 function renderNotes(notes,error=false){
  return notes.flatMap(note=>note.split('；')).map(note=>{
@@ -239,7 +240,7 @@ function setupWorkspaceNavigation(){
  const tabs=document.createElement('div');tabs.className='mobile-talent-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','天赋分支');tabs.innerHTML=talentTrees.map((tree,i)=>`<button type="button" role="tab" data-mobile-branch="${i}">${tree.name}</button>`).join('');$('#talentTree').before(tabs);tabs.onclick=e=>{const b=e.target.closest('[data-mobile-branch]');if(!b)return;mobileTalentBranch=Number(b.dataset.mobileBranch);updateTalentTabs();};
 }
 function updateTalentTabs(){const branches=[...document.querySelectorAll('#talentTree .talent-branch')];branches.forEach((branch,i)=>branch.classList.toggle('mobile-active',i===mobileTalentBranch));document.querySelectorAll('[data-mobile-branch]').forEach((tab,i)=>{tab.setAttribute('aria-selected',String(i===mobileTalentBranch));});}
-$('#draftActions').innerHTML=Object.entries(draftActions).map(([id,{label,seconds,tip}])=>`<button type="button" class="quiet" data-add="${id}" title="${tip}">${label??skills[id].name}${seconds===undefined?'':`<small>${seconds}秒</small>`}</button>`).join('');
+$('#draftActions').innerHTML=Object.entries(draftActions).map(([id,{label,seconds,tip}])=>`<button type="button" class="quiet" data-add="${id}" title="${tip}">${id==='stealth'&&skillIcons.stealth?`<img class="draft-stealth-icon" src="${skillIcons.stealth}" alt="">`:''}${label??skills[id].name}${seconds===undefined?'':`<small>${seconds}秒</small>`}</button>`).join('');
 setupDamageEditor();setupReplay();setupWorkspaceNavigation();syncConfig();editDraw();drawTalents();drawLibrary();refresh();
 numIds.forEach(id=>$('#'+id).addEventListener('input',e=>{if(e.target.value==='')return;let n=Number(e.target.value);if(!Number.isFinite(n)||n<Number(e.target.min)||n>Number(e.target.max))return;state.cfg[id]=n;if(id==='reduction')$('#dirtyDeeds').value=[0,10,20].includes(n)?String(n):'custom';drawResult();save()}));boolIds.forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=e.target.checked;drawResult();save()}));
 ['composure','exposeRank','ruthlessRank','ruthlessMode','relentlessRank','relentlessMode','initiativeRank','sealRank','bootRank','flashRank','punctureRank','ambushCritRank','efficientRank','dirtyTricksRank'].forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=id.endsWith('Mode')?e.target.value:Number(e.target.value);drawResult();save()}));

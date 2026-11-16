@@ -10,7 +10,7 @@
 
 ## 使用
 
-- **连招演练**将技能、队列、木桩播放和逐步推演放在一起。点击技能加入队列，使用 ↑ ↓ 调整顺序，插入“等待”可留出间隔。技能后显示按当前状态推演的消耗，“—”表示条件不足或该操作不消耗能量。
+- **连招演练**将技能、队列、木桩播放和逐步推演放在一起。点击游戏技能图标加入队列，使用 ↑ ↓ 调整顺序，插入“等待”可留出间隔。图标右下角显示按当前状态推演的消耗，“—”表示当前条件不足或前序步骤中断，黄色边框表示还需额外回能。
 - **装备数值**可直接查看当前面板攻击强度、主副手伤害和速度，编辑武器数值及伤害基准。先核对这里的数值，再用木桩验证伤害。
 - **天赋树**默认按 60 级、最多 51 点计算。桌面悬停图标显示当前或下一级效果与前置条件，左键加点、右键减点，也可用键盘 + / −。触屏轻点图标，在弹层内查看全部等级和加减。已建模的天赋自动应用到推演。支持分系重置、导入和复制 WoW Handbook 加点链接。可按 1–60 级及才华横溢规划天赋点，降低等级会保留加点所需的最低等级；低等级只限制天赋预算，伤害仍使用满级技能基准。对比模式可分别编辑 A / B，按差异筛选，并复制一条能同时打开两套加点的链接。当前正在编辑的方案同步到连招推演。
 - **分析对比**可保存并载入连招、比较两套连招或计算资源与控制衔接概率。已保存的连招包含技能次序及等待和公共 CD 选项。装备、天赋和战斗规则以当前配置为准。
@@ -73,6 +73,7 @@
 ## 数据参考与来源限制
 
 - 用户提供的 [WoW Handbook 无限服盗贼天赋模拟器](https://wowhandbook.com/zh/classes/rogue/talents/)：树的名称、位置、等级上限和前置条件；按该站标注的客户端 1.60.1.70790 整理，并由本项目独立实现操作界面。来源或游戏更新后需重新核对。天赋效果按各等级独立整理，非游戏内原文；54 张图标从该站获取并保存在 `assets/talents`，供本地离线查看，游戏图像及其相关权利归权利人所有。另参考 [同站盗贼技能书](https://wowhandbook.com/zh/classes/rogue/spellbook/)。
+- 技能图标复用已有天赋图标，并从[暴雪图标服务](https://render.worldofwarcraft.com/us/icons/56/ability_cheapshot.jpg)补齐缺少的图片，存于 `assets/skills`。游戏图像及其相关权利归权利人所有。
 
 - [暴雪：《无限》潜行者与术士职业说明](https://wow.blizzard.cn/news/24310968/index.html)
 - [MetaBot：盗贼技能表](https://metabot.gg/zh_CN/wow-forever/classes/rogue)、[偷袭](https://metabot.gg/zh_CN/wow-forever/abilities/rogue-cheap-shot)、[刺击](https://metabot.gg/zh_CN/wow-forever/changes)、[肾击](https://metabot.gg/zh_CN/wow-forever/abilities/rogue-kidney-shot)、[鬼魅攻击](https://metabot.gg/zh_CN/wow-forever/talents/rogue-ghostly-strike)、[卑鄙](https://metabot.gg/zh_CN/wow-forever/talents/rogue-dirty-deeds)。MetaBot 标明客户端版本 1.60.1.70790；第三方不同语言页面和游戏版本可能存在差异，需以角色实际技能描述验证。

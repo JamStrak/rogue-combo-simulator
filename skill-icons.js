@@ -1,0 +1,26 @@
+// 能力图标按游戏客户端的技能图标整理，图片保存在本地以支持离线使用。
+const skillIcons = {
+ premed:'assets/talents/spell_shadow_possession.jpg',
+ preparation:'assets/talents/spell_shadow_antishadow.jpg',
+ deathmark:'assets/talents/ability_creature_cursed_02.jpg',
+ cheap:'assets/skills/ability_cheapshot.jpg',
+ strike:'assets/skills/ability_theblackarrow.jpg',
+ ghost:'assets/talents/spell_shadow_curse.jpg',
+ ambush:'assets/talents/ability_rogue_ambush.jpg',
+ hemo:'assets/talents/spell_shadow_lifedrain.jpg',
+ mutilate:'assets/talents/ability_rogue_deadlybrew.jpg',
+ coldblood:'assets/talents/spell_ice_lament.jpg',
+ adrenaline:'assets/talents/spell_shadow_shadowworddominate.jpg',
+ backstab:'assets/talents/ability_backstab.jpg',
+ sinister:'assets/talents/spell_shadow_ritualofsacrifice.jpg',
+ gouge:'assets/talents/ability_gouge.jpg',
+ kidney:'assets/talents/ability_rogue_kidneyshot.jpg',
+ expose:'assets/talents/ability_warrior_riposte.jpg',
+ eviscerate:'assets/talents/ability_rogue_eviscerate.jpg',
+ rupture:'assets/talents/ability_rogue_rupture.jpg',
+ slice:'assets/talents/ability_rogue_slicedice.jpg',
+ blind:'assets/skills/spell_shadow_mindsteal.jpg',
+ garrote:'assets/skills/ability_rogue_garrote.jpg',
+ vanish:'assets/skills/ability_vanish.jpg',
+ stealth:'assets/talents/ability_stealth.jpg'
+};
