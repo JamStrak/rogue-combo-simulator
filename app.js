@@ -75,7 +75,38 @@ function sequenceControls(entry,index){
  if(entry.id==='stealth')return '<span class="offgcd">脱战后可潜行</span>';
  return `<label class="offgcd"><input type="checkbox" data-off="${index}" ${entry.offGcd?'checked':''}> 不占公共CD</label>`;
 }
-function drawSequence(){const dest=$('#sequence');if(!state.sequence.length){dest.innerHTML='<div class="empty">从上方选择技能，开始构建你的连招。</div>';return}dest.innerHTML=state.sequence.map((a,i)=>`<div class="seqrow"><span class="seqindex">${String(i+1).padStart(2,'0')}</span><strong>${skillIcons[a.id]?`<img class="sequence-icon" src="${skillIcons[a.id]}" alt="" loading="lazy">`:''}${escapeHtml(state.book[a.id].name)}</strong>${sequenceControls(a,i)}<div class="rowbuttons"><button data-up="${i}" aria-label="上移" ${i===0?'disabled':''}>↑</button><button data-down="${i}" aria-label="下移" ${i===state.sequence.length-1?'disabled':''}>↓</button><button data-del="${i}" aria-label="移除">×</button></div><div class="seq-preview" data-step-preview="${i}"></div></div>`).join('');}
+let sequenceRows=new Map(),sequenceDamageRows=new Map(),sequenceDetailIndex=null,sequenceDetailPinned=false,suppressSequenceFocus=false;
+function closeSequenceDetail(){
+ const detail=$('#sequenceDetail');
+ if(!detail)return;
+ detail.hidden=true;
+ if(sequenceDetailIndex!==null)$(`[data-step-detail="${sequenceDetailIndex}"]`)?.setAttribute('aria-expanded','false');
+ sequenceDetailIndex=null;sequenceDetailPinned=false;
+}
+function drawSequence(){
+ closeSequenceDetail();
+ const dest=$('#sequence');
+ if(!state.sequence.length){dest.innerHTML='<div class="empty">从技能区选择技能，开始构建你的连招。</div>';return;}
+ dest.innerHTML=state.sequence.map((a,i)=>`${i?'<span class="seq-arrow" aria-hidden="true">→</span>':''}<div class="seqrow" data-sequence-row="${i}"><div class="seq-card-top"><span class="seqindex">${String(i+1).padStart(2,'0')}</span><button type="button" class="seq-icon-button" data-step-detail="${i}" aria-label="查看第 ${i+1} 步 ${escapeHtml(state.book[a.id].name)}详情" aria-controls="sequenceDetail" aria-expanded="false">${skillIcons[a.id]?`<img class="sequence-icon" src="${skillIcons[a.id]}" alt="" loading="lazy">`:`<span class="seq-icon-fallback">${escapeHtml(state.book[a.id].name.slice(0,1))}</span>`}</button><strong class="seq-name">${escapeHtml(state.book[a.id].name)}</strong></div><div class="seq-card-metrics" data-step-preview="${i}"></div>${sequenceControls(a,i)}<div class="rowbuttons"><button type="button" data-up="${i}" aria-label="上移第 ${i+1} 步" ${i===0?'disabled':''}>↑</button><button type="button" data-down="${i}" aria-label="下移第 ${i+1} 步" ${i===state.sequence.length-1?'disabled':''}>↓</button><button type="button" data-del="${i}" aria-label="移除第 ${i+1} 步">×</button></div></div>`).join('');
+}
+function positionSequenceDetail(anchor){
+ const detail=$('#sequenceDetail'),rect=anchor.getBoundingClientRect(),margin=8;
+ detail.style.left=margin+'px';detail.style.top=margin+'px';
+ const box=detail.getBoundingClientRect();
+ const left=Math.max(margin,Math.min(rect.left,window.innerWidth-box.width-margin));
+ const below=rect.bottom+8,top=below+box.height<=window.innerHeight-margin?below:Math.max(margin,rect.top-box.height-8);
+ detail.style.left=left+'px';detail.style.top=top+'px';
+}
+function showSequenceDetail(index,pinned=false){
+ const anchor=$(`[data-step-detail="${index}"]`),detail=$('#sequenceDetail'),entry=state.sequence[index];
+ if(!anchor||!entry)return;
+ if(sequenceDetailIndex!==null)$(`[data-step-detail="${sequenceDetailIndex}"]`)?.setAttribute('aria-expanded','false');
+ sequenceDetailIndex=index;sequenceDetailPinned=pinned;
+ const row=sequenceRows.get(index),dmg=sequenceDamageRows.get(index);
+ detail.innerHTML=`<div class="sequence-detail-head"><strong>第 ${index+1} 步 · ${escapeHtml(state.book[entry.id].name)}</strong><button type="button" data-sequence-close aria-label="关闭详情">×</button></div>${row?`${autoWaitCard(row)}${stageMetrics(row,dmg)}<div class="stage-flags">${stageFlags(row)}</div>${stageDetails(row,dmg)}`:'<p class="note-warning">前面的步骤已中断，尚未执行</p>'}`;
+ detail.hidden=false;anchor.setAttribute('aria-expanded','true');positionSequenceDetail(anchor);
+}
+
 function drawCompare(){const c=state.cfg,b=state.book;$('#costCompare').innerHTML=['cheap','ambush','garrote'].map(id=>{let full=skillCost(id,c,b,c.max,false).cost, normal=skillCost(id,c,b,c.max,true).cost;return `<article><span>${b[id].name}</span><p><small>脱战满能量</small><b>${fmt(full)}</b></p><p><small>战斗中 / 未满</small><b>${fmt(normal)}</b></p></article>`}).join('');}
 function renderNotes(notes,error=false){
  return notes.flatMap(note=>note.split('；')).map(note=>{
@@ -217,16 +248,17 @@ function drawNearbyResult(v,damage){
   const blocked=v.stopped?' · 已中断'+(state.sequence.length>last.index+1?'，后续未执行':''):'';
   panel.innerHTML=`<div class="live-title"><strong>第 ${last.index+1} 步 · ${escapeHtml(last.name)} <small>${fmt(last.time)}秒${blocked}</small></strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div>${comboPointBadge(last)}${autoWaitCard(last)}${stageMetrics(last,byDamage.get(last.index))}<div class="stage-flags">${stageFlags(last,2)}</div>`;
  }
- const byIndex=new Map(v.rows.map(row=>[row.index,row]));
+ sequenceRows=new Map(v.rows.map(row=>[row.index,row]));sequenceDamageRows=byDamage;
  $$('#sequence .auto-wait-card').forEach(el=>el.remove());
  $$('#sequence [data-step-preview]').forEach(el=>{
-  const row=byIndex.get(Number(el.dataset.stepPreview)),dmg=row&&byDamage.get(row.index);
-  const title=el.closest('.seqrow').querySelector('strong');
-  title.querySelector('.combo-point-badge')?.remove();
-  title.insertAdjacentHTML('beforeend',comboPointBadge(row));
-  if(row?.autoEnergyWait)el.closest('.seqrow').insertAdjacentHTML('beforebegin',autoWaitCard(row));
-  el.innerHTML=row?`${stageMetrics(row,dmg)}<div class="stage-flags">${stageFlags(row)}</div>${stageDetails(row,dmg)}`:'<span class="note-warning">前面的步骤已中断，尚未执行</span>';
+  const row=sequenceRows.get(Number(el.dataset.stepPreview)),dmg=row&&byDamage.get(row.index),card=el.closest('.seqrow');
+  card.classList.toggle('seq-blocked',!row||!!row.error);
+  if(row?.autoEnergyWait)card.insertAdjacentHTML('beforebegin',autoWaitCard(row));
+  const overflow=row?.notes.find(note=>/连击点溢出/.test(note));
+  const risk=row?.notes.find(note=>/控制空档|能量不足/.test(note));
+  el.innerHTML=row?`${row.error?'<span class="note-warning">执行失败</span>':''}<span class="seq-metric">能量 <b>${fmt(row.before)} → ${fmt(row.after)}</b></span><span class="seq-metric">连击点 <b>${row.cp} / 5</b></span><span class="seq-metric">本步伤害 <b>${damageLabel(dmg)}</b></span>${comboPointBadge(row)}${overflow?`<span class="note-overflow">${escapeHtml(overflow)}</span>`:''}${risk?`<span class="note-warning">${escapeHtml(risk)}</span>`:''}`:'<span class="note-warning">前序中断，尚未执行</span>';
  });
+ if(sequenceDetailIndex!==null)showSequenceDetail(sequenceDetailIndex,sequenceDetailPinned);
 }
 function drawGearOverview(){
  const {weapon,ap,critRate,mainCrit,offCrit,mainNormal,offNormal,mainExpected,offExpected}=weaponMetrics(state.damage,state.cfg);
@@ -312,7 +344,18 @@ $('.skill-panel').addEventListener('click',event=>{
  state.sequence.push(draftEntry(button.dataset.add));
  refresh();
 });
-$('#sequence').onclick=e=>{const b=e.target.closest('button');if(!b)return;let i=Number(b.dataset.up??b.dataset.down??b.dataset.del);if(b.dataset.del!==undefined)state.sequence.splice(i,1);else {let j=b.dataset.up!==undefined?i-1:i+1;if(j>=0&&j<state.sequence.length)[state.sequence[i],state.sequence[j]]=[state.sequence[j],state.sequence[i]]}refresh()};
+$('#sequence').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.stepDetail!==undefined){const i=Number(b.dataset.stepDetail);if(sequenceDetailIndex===i&&sequenceDetailPinned)closeSequenceDetail();else showSequenceDetail(i,true);return;}if(b.dataset.up===undefined&&b.dataset.down===undefined&&b.dataset.del===undefined)return;let i=Number(b.dataset.up??b.dataset.down??b.dataset.del);if(b.dataset.del!==undefined)state.sequence.splice(i,1);else {let j=b.dataset.up!==undefined?i-1:i+1;if(j>=0&&j<state.sequence.length)[state.sequence[i],state.sequence[j]]=[state.sequence[j],state.sequence[i]]}refresh()};
+const sequenceElement=$('#sequence'),sequenceDetail=$('#sequenceDetail');
+sequenceElement.addEventListener('pointerover',e=>{const button=e.target.closest('[data-step-detail]');if(button&&e.pointerType==='mouse'&&!button.contains(e.relatedTarget)&&!sequenceDetailPinned)showSequenceDetail(Number(button.dataset.stepDetail));});
+sequenceElement.addEventListener('pointerout',e=>{const button=e.target.closest('[data-step-detail]');if(button&&!button.contains(e.relatedTarget)&&!sequenceDetail.contains(e.relatedTarget)&&!sequenceDetailPinned)closeSequenceDetail();});
+sequenceElement.addEventListener('focusin',e=>{const button=e.target.closest('[data-step-detail]');if(button&&!sequenceDetailPinned&&!suppressSequenceFocus)showSequenceDetail(Number(button.dataset.stepDetail));});
+sequenceElement.addEventListener('focusout',e=>{if(e.target.closest('[data-step-detail]')&&!sequenceDetail.contains(e.relatedTarget)&&!sequenceDetailPinned)closeSequenceDetail();});
+sequenceDetail.addEventListener('pointerleave',e=>{if(!sequenceDetailPinned&&!e.relatedTarget?.closest?.('[data-step-detail]'))closeSequenceDetail();});
+sequenceDetail.addEventListener('click',e=>{if(e.target.closest('[data-sequence-close]'))closeSequenceDetail();});
+document.addEventListener('pointerdown',e=>{if(!sequenceDetail.hidden&&!sequenceDetail.contains(e.target)&&!e.target.closest('[data-step-detail]'))closeSequenceDetail();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sequenceDetail.hidden){const anchor=$(`[data-step-detail="${sequenceDetailIndex}"]`);closeSequenceDetail();suppressSequenceFocus=true;anchor?.focus();suppressSequenceFocus=false;}});
+window.addEventListener('resize',()=>{if(sequenceDetailIndex!==null)positionSequenceDetail($(`[data-step-detail="${sequenceDetailIndex}"]`));});
+window.addEventListener('scroll',()=>{if(sequenceDetailIndex!==null)positionSequenceDetail($(`[data-step-detail="${sequenceDetailIndex}"]`));},{passive:true,capture:true});
 function updateDuration(input,index){
  const entry=state.sequence[index];
  if(draftActions[entry?.id]?.seconds===undefined)return;
