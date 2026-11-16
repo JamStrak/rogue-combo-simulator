@@ -150,7 +150,10 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
   }
   const last=actions.at(-1);
   const controlEnd=Math.max(0,number(last?.controlEnd??(last?.error?actions.at(-2)?.controlEnd:0),0));
-  if(last&&nextMain!==null&&controlEnd>last.time+1e-9)addSwingsThrough(controlEnd,last.index,false);
+  // 末步后印记还在时，如果角色仍在自动攻击，应继续到印记结算时刻。
+  const markEnd=Math.max(0,...actions.filter(row=>!row.error&&idOf(row)==='deathmark'&&row.cpBefore>0).map(row=>row.time+6));
+  const tailEnd=Math.max(controlEnd,markEnd);
+  if(last&&nextMain!==null&&tailEnd>last.time+1e-9)addSwingsThrough(tailEnd,last.index,markEnd>=controlEnd&&markEnd>last.time+1e-9);
  }
  whiteEvents.sort((a,b)=>a.time-b.time||a.index-b.index);
  if(settings.whiteCritMode==='random'){
@@ -162,20 +165,40 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
   }
  }
  const directEvents=rows.filter(r=>r.directDamage>0).map(r=>({time:r.time,type:'direct',id:sequence[r.index]?.id,index:r.index,damage:r.directDamage,critMode:r.critMode}));
- const order={bleed:0,white:1,direct:2};
- const events=[...bleedEvents,...whiteEvents,...directEvents].sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
- let cumulative=0,position=0,whitePosition=0;
+ // 以已模拟的命中构建印记；6 秒到期后单独结算，不追加未建模的攻击。
+ const marks=simulation.rows.filter(row=>!row.error&&(row.id??sequence[row.index]?.id)==='deathmark'&&row.cpBefore>0);
+ const rank=Math.max(0,Math.min(3,Math.floor(number(cfg.deadlyStrikeRank,0))));
+ const talentMultiplier=1+[0,0.07,0.13,0.20][rank];
+ // 提前刷新时按新印记覆盖旧印记，覆盖是否触发旧印记需游戏内验证。
+ const deathmarkEvents=marks.filter((mark,i)=>!marks[i+1]||marks[i+1].time>=mark.time+6-1e-9).map(mark=>{
+  const cp=Math.max(1,Math.min(5,Math.floor(number(mark.cpBefore,0))));
+  const expiry=mark.time+6, ratio=0.12*cp*talentMultiplier;
+  // 同刻已排定的流血/平砍先于施法；到期时它们先结算，技能后结算。
+  const eligible=event=>(event.time>mark.time+1e-9||(event.type==='direct'&&Math.abs(event.time-mark.time)<=1e-9&&event.index>mark.index))&&
+   (event.time<expiry-1e-9||(event.type!=='direct'&&Math.abs(event.time-expiry)<=1e-9));
+  const stored=[...bleedEvents,...whiteEvents,...directEvents].filter(eligible).reduce((sum,event)=>sum+event.damage*(event.type==='bleed'?2:1)*ratio,0);
+  // 暴击率对上限的系数为客户端技能公式；致命一击对最终伤害的作用仍需实测。
+  const cap=([0,165,267,369,471,573][cp]+ap*0.04*cp)*(1+metrics.critRate/100);
+  return {time:expiry,type:'deathmark',id:'deathmark',name:'死亡印记结算',index:mark.index,damage:Math.min(stored,cap)*talentMultiplier,stored,cap,crit:null};
+ });
+ const order={bleed:0,white:1,deathmark:2,direct:3};
+ const events=[...bleedEvents,...whiteEvents,...deathmarkEvents,...directEvents].sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
+ let cumulative=0,position=0,whitePosition=0,markPosition=0;
  for(const row of rows){
   while(position<bleedEvents.length&&bleedEvents[position].time<=row.time+1e-9)row.bleedDamage+=bleedEvents[position++].damage;
   while(whitePosition<whiteEvents.length&&whiteEvents[whitePosition].time<=row.time+1e-9)row.whiteDamage+=whiteEvents[whitePosition++].damage;
-  row.damage=row.directDamage+row.bleedDamage+row.whiteDamage;cumulative+=row.damage;row.cumulative=cumulative;
+  row.markDamage=0;
+  while(markPosition<deathmarkEvents.length&&deathmarkEvents[markPosition].time<=row.time+1e-9)row.markDamage+=deathmarkEvents[markPosition++].damage;
+  row.damage=row.directDamage+row.bleedDamage+row.whiteDamage+row.markDamage;cumulative+=row.damage;row.cumulative=cumulative;
  }
  const tailDamage=bleedEvents.slice(position).reduce((n,e)=>n+e.damage,0);
  const directTotal=directEvents.reduce((n,e)=>n+e.damage,0),bleedTotal=bleedEvents.reduce((n,e)=>n+e.damage,0);
  const whiteTotal=whiteEvents.reduce((n,e)=>n+e.damage,0);
  const whiteTailDamage=whiteEvents.slice(whitePosition).reduce((n,e)=>n+e.damage,0);
- total=directTotal+bleedTotal+whiteTotal;
- const during=total-tailDamage-whiteTailDamage;
+ const markTotal=deathmarkEvents.reduce((n,e)=>n+e.damage,0);
+ const markTailDamage=deathmarkEvents.slice(markPosition).reduce((n,e)=>n+e.damage,0);
+ total=directTotal+bleedTotal+whiteTotal+markTotal;
+ const during=total-tailDamage-whiteTailDamage-markTailDamage;
  const endTime=Math.max(duration,events.length?events[events.length-1].time:0);
  let peak={start:0,end:window,damage:0,dps:0},right=0,running=0;
  for(let left=0;left<events.length;){
@@ -185,6 +208,6 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
   while(left<events.length&&events[left].time===start)running-=events[left++].damage;
  }
 
- return {rows,total,during,tailDamage,whiteTailDamage,directTotal,bleedTotal,whiteTotal,duration,endTime,dps:endTime>0?total/endTime:null,peak,events};
+ return {rows,total,during,tailDamage,whiteTailDamage,markTailDamage,markTotal,directTotal,bleedTotal,whiteTotal,duration,endTime,dps:endTime>0?total/endTime:null,peak,events};
 }
 if(typeof module!=='undefined')module.exports={damageDefaults,weaponMetrics,calculateDamage};

@@ -20,7 +20,7 @@ function makeReplay(sequence, simulation, damage, cfg) {
   const hit=direct.get(row.index);
   events.push({time:row.time,type:row.error?'error':row.wait?'wait':'action',id:row.id,index:row.index,name:row.name,damage:hit?.damage||0,crit:hit?.crit??null,critMode:hit?.critMode,skillCritical:row.critOutcome?.critical===true||hit?.crit===true||hit?.critMode==='rolled-crit',notes:row.notes});
  }
- const order={bleed:0,white:1,action:2,wait:2,error:2};
+ const order={bleed:0,white:1,deathmark:2,action:3,wait:3,error:3};
  events.sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
  const actionByIndex=new Map(actions.map(row=>[row.index,row]));
  let cumulative=0;
@@ -210,6 +210,7 @@ function setupReplay(){
  function eventLabel(event){
   if(event.type==='white')return event.hand==='main'?'主手平砍':'副手平砍';
   if(event.type==='bleed')return event.id==='garrote'?'绞喉流血':'割裂流血';
+  if(event.type==='deathmark')return '死亡印记结算';
   if(event.type==='error')return `${event.name} · 中断`;
   return event.id==='wait'?'等待结束':event.name;
  }
@@ -271,7 +272,7 @@ function setupReplay(){
    if(critical)damage.className='combat-log-crit';
    log.append(damage);
    const floating=document.createElement('span');
-   floating.className=`combat-float-${event.type}`;
+   floating.className=`combat-float-${event.type==='deathmark'?'action':event.type}`;
    if(event.hand)floating.dataset.hand=event.hand;
    const lane=event.hand||event.type;
    const stack=floatLanes.get(lane)||0;
@@ -294,7 +295,7 @@ function setupReplay(){
   setText(actionText,title);
   if(event.type==='white')return event.hand==='main'?'hit-main':'hit-off';
   if(event.type==='bleed')return 'hit-bleed';
-  if(event.type==='action'&&amount>0)return 'hit-skill';
+  if((event.type==='action'||event.type==='deathmark')&&amount>0)return 'hit-skill';
  }
  function step(stamp){
   if(replayPlayer.status!=='playing')return;
