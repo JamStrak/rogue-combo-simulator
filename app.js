@@ -256,7 +256,13 @@ function drawNearbyResult(v,damage){
   if(row?.autoEnergyWait)card.insertAdjacentHTML('beforebegin',autoWaitCard(row));
   const overflow=row?.notes.find(note=>/连击点溢出/.test(note));
   const risk=row?.notes.find(note=>/控制空档|能量不足/.test(note));
-  el.innerHTML=row?`${row.error?'<span class="note-warning">执行失败</span>':''}<span class="seq-metric">能量 <b>${fmt(row.before)} → ${fmt(row.after)}</b></span><span class="seq-metric">连击点 <b>${row.cp} / 5</b></span><span class="seq-metric">本步伤害 <b>${damageLabel(dmg)}</b></span>${comboPointBadge(row)}${overflow?`<span class="note-overflow">${escapeHtml(overflow)}</span>`:''}${risk?`<span class="note-warning">${escapeHtml(risk)}</span>`:''}`:'<span class="note-warning">前序中断，尚未执行</span>';
+  if(!row){delete card.dataset.points;el.innerHTML='<span class="note-warning">前序中断，尚未执行</span>';return;}
+  const maxEnergy=state.cfg.max, energyPercent=maxEnergy>0?Math.max(0,Math.min(100,row.after/maxEnergy*100)):0;
+  const energyTitle=`能量：${fmt(row.before)} → ${fmt(row.after)} / ${fmt(maxEnergy)}`;
+  const points=Math.max(0,Math.min(5,row.cp));
+  card.dataset.points=String(points);
+  const pointHint=points===5?'，已满，注意溢出':points===4?'，可考虑终结技':'';
+  el.innerHTML=`${row.error?'<span class="note-warning">执行失败</span>':''}<div class="seq-visual-metrics"><div class="seq-energy-bar" role="progressbar" aria-label="结算后能量" aria-valuemin="0" aria-valuemax="${maxEnergy}" aria-valuenow="${row.after}" aria-valuetext="${escapeHtml(energyTitle)}" title="${escapeHtml(energyTitle)}"><span class="seq-energy-fill" style="width:${energyPercent}%"></span><span class="seq-energy-value">${fmt(row.after)} / ${fmt(maxEnergy)}</span></div><div class="seq-combo-points" role="img" aria-label="连击点 ${points} / 5${pointHint}" title="连击点 ${points} / 5${pointHint}">${Array.from({length:5},(_,i)=>`<span class="seq-combo-point${i<points?' is-active':''}" aria-hidden="true"></span>`).join('')}</div><div class="seq-damage" aria-label="本步伤害 ${damageLabel(dmg)}" title="本步伤害：技能、平砍及流血，不含未来尾伤"><b class="seq-damage-value">${damageLabel(dmg)}</b></div></div>${overflow?`<span class="note-overflow">${escapeHtml(overflow)}</span>`:''}${risk?`<span class="note-warning">${escapeHtml(risk)}</span>`:''}`;
  });
  if(sequenceDetailIndex!==null)showSequenceDetail(sequenceDetailIndex,sequenceDetailPinned);
 }
