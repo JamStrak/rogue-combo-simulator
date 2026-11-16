@@ -123,3 +123,21 @@
 .combat-log-entry{display:flex;gap:8px}.combat-log-entry time{color:#a4b4a4;min-width:38px}.combat-log-entry span{flex:1}.combat-log-entry b{color:#f0cf88}.combat-event-error span{color:#ff8179}.combat-progress b{color:#f1d59b}.combat-progress progress{min-width:18px}
 
 .combat-jump{margin-left:8px;color:#e2c185;font-size:12px}.combat-player{scroll-margin-top:76px}.combat-controls button,.combat-controls select{min-height:44px}
+
+/* Keep the idle sway independent of the hit animation on the dummy container. */
+.combat-dummy > span {animation:dummy-sway 2.8s ease-in-out infinite;animation-play-state:paused}
+.combat-stage[data-playback="playing"]:not([data-control="held"]) .combat-dummy > span {animation-play-state:running}
+.dummy-post {transform-origin:3.5px 105px}
+.dummy-arms {transform-origin:36.5px 77px}
+.dummy-body {transform-origin:22.5px 82px}
+.dummy-head {transform-origin:12.5px 104px}
+.dummy-target {transform-origin:10.5px 71px}
+@keyframes dummy-sway {0%,100%{transform:rotate(-1.2deg)}50%{transform:rotate(1.2deg)}}
+@media (prefers-reduced-motion:reduce) {.combat-dummy > span {animation:none}}
+/* Controlled targets flash on impact without breaking the frozen pose. */
+.combat-stage[data-control="held"].hit-main .combat-dummy,
+.combat-stage[data-control="held"].hit-off .combat-dummy,
+.combat-stage[data-control="held"].hit-skill .combat-dummy,
+.combat-stage[data-control="held"].hit-bleed .combat-dummy {animation-name:dummy-controlled-hit}
+.combat-stage[data-playback="paused"] .combat-dummy {animation-play-state:paused}
+@keyframes dummy-controlled-hit {35%{filter:brightness(1.7)}}

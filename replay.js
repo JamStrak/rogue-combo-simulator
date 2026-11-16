@@ -81,6 +81,10 @@ function setupReplay(){
  cue.className='combat-cast-cue';
  cue.setAttribute('aria-live','polite');
  stage.querySelector('.combat-arena').append(cue);
+ const skillFloat=document.createElement('div');
+ skillFloat.className='combat-skill-float';
+ skillFloat.setAttribute('aria-hidden','true');
+ stage.querySelector('.combat-arena').append(skillFloat);
  const stepBox=document.createElement('div');
  stepBox.className='combat-step';
  stepBox.innerHTML='<span>连招步骤</span><strong id="combatStepIndex">—</strong><b id="combatStepName">等待播放</b>';
@@ -104,6 +108,18 @@ function setupReplay(){
   if(replayPlayer.frame)cancelAnimationFrame(replayPlayer.frame);
   replayPlayer.frame=0;
   replayPlayer.lastStamp=null;
+ }
+ function setSkillAnimationsPaused(paused){
+  for(const icon of skillFloat.children){
+   for(const animation of icon.getAnimations()){
+    if(paused){
+     // 固定当前时间，避免暂停请求等待下一次渲染时仍继续走时。
+     const current=animation.currentTime;
+     animation.pause();
+     if(current!==null)animation.currentTime=current;
+    }else animation.play();
+   }
+  }
  }
  function paintDiagnostics(model,snap,ready){
   const {step,gap,energyWaiting,blocked,previous}=snap;
@@ -184,6 +200,7 @@ function setupReplay(){
   replayPlayer.seen=0;
   logBox.replaceChildren();
   floatBox.replaceChildren();
+  skillFloat.replaceChildren();
   cue.replaceChildren();
   cue.classList.remove('visible');
   stage.classList.remove(...hitClasses);
@@ -211,7 +228,10 @@ function setupReplay(){
   if(event.damage>0)add(`伤害 ${number(event.damage)}${event.crit===true||event.critMode==='rolled-crit'?' 暴击':''}`,'damage');
   if(event.type==='error')add('未施放','error');
   if(!detail.childNodes.length)add('状态已更新','neutral');
-  return [title,detail];
+  const item=document.createElement('div');
+  item.className='combat-cast-item';
+  item.append(title,detail);
+  return [item];
  }
  function showCues(parts){
   if(!parts.length)return;
@@ -223,6 +243,17 @@ function setupReplay(){
  }
  function present(event,floatLanes){
   const title=eventLabel(event),amount=event.damage||0;
+  if(event.type==='action'&&typeof skillIcons!=='undefined'&&skillIcons[event.id]){
+   const icon=document.createElement('img');
+   icon.src=skillIcons[event.id];
+   icon.alt='';
+   const stack=floatLanes.get('skill-icon')||0;
+   floatLanes.set('skill-icon',stack+1);
+   icon.style.setProperty('--skill-lane',Math.floor(stack/4));
+   icon.style.setProperty('--skill-stack',stack%4);
+   icon.addEventListener('animationend',()=>icon.remove(),{once:true});
+   skillFloat.append(icon);
+  }
   const critical=event.crit===true||event.critMode==='rolled-crit';
   const log=document.createElement('div');
   log.className='combat-log-entry';
@@ -294,16 +325,18 @@ function setupReplay(){
  }
  play.addEventListener('click',()=>{
   if(!replayPlayer.model?.events.length)return;
-  if(replayPlayer.status==='playing'){stopFrame();replayPlayer.status='paused';paint();return;}
+  if(replayPlayer.status==='playing'){stopFrame();setSkillAnimationsPaused(true);replayPlayer.status='paused';paint();return;}
   if(replayPlayer.status==='done')resetState();
   replayPlayer.status='playing';
   replayPlayer.lastStamp=null;
+  paint();
+  setSkillAnimationsPaused(false);
   step(performance.now());
  });
  reset.addEventListener('click',resetState);
  hp.addEventListener('change',()=>{hp.value=String(maxHealth());resetState();});
  document.addEventListener('visibilitychange',()=>{
-  if(document.hidden&&replayPlayer.status==='playing'){stopFrame();replayPlayer.status='paused';paint();}
+  if(document.hidden&&replayPlayer.status==='playing'){stopFrame();setSkillAnimationsPaused(true);replayPlayer.status='paused';paint();}
  });
  replayPlayer.update=(sequence,simulation,damage,cfg)=>{
   replayPlayer.model=makeReplay(sequence,simulation,damage,cfg);

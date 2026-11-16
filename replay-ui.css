@@ -242,6 +242,7 @@
   color: #fff3cc; line-height: 1.2; opacity: 0; pointer-events: none;
 }
 .combat-cast-cue.visible { animation: combat-cue-fade var(--cue-duration, 800ms) ease-in-out both; }
+.combat-cast-item { display: flex; align-items: baseline; flex-wrap: wrap; gap: 1px 4px; }
 .combat-cast-cue strong { font-size: clamp(13px, 2vw, 17px); overflow-wrap: anywhere; }
 .combat-cast-details { display: flex; flex-wrap: wrap; gap: 2px 5px; font-size: 10px; font-variant-numeric: tabular-nums; }
 .combat-cast-details span { white-space: nowrap; }
@@ -258,4 +259,30 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .combat-cast-cue.visible { animation: none; opacity: 1; }
+}
+
+/* 施放图标在木桩右侧飘出，动画结束即移除；暂停时动画和寿命一起冻结。 */
+.combat-skill-float {
+  position: absolute; z-index: 3; inset: 0; overflow: hidden; pointer-events: none;
+}
+.combat-skill-float img {
+  --skill-icon-size: clamp(22px, 5vw, 30px);
+  position: absolute; right: calc(1px + var(--skill-lane) * (var(--skill-icon-size) + 3px));
+  bottom: calc(12px + var(--skill-stack) * (var(--skill-icon-size) + 3px));
+  width: var(--skill-icon-size); aspect-ratio: 1; object-fit: cover;
+  border: 1px solid #e5c077; border-radius: 4px; box-shadow: 0 1px 5px #000b;
+  animation: combat-skill-rise 1.15s ease-out forwards;
+}
+.combat-stage[data-playback="paused"] .combat-skill-float img { animation-play-state: paused; }
+@keyframes combat-skill-rise {
+  from { transform: translateY(0); opacity: 1; }
+  65% { opacity: 1; }
+  to { transform: translateY(-75px); opacity: 0; }
+}
+@media (max-width: 600px) {
+  .combat-stage .combat-dummy { left: 55%; }
+  .combat-combo { left: clamp(68px, calc(55% + 27px), calc(100% - 68px)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .combat-skill-float img { animation-duration: 0.01s; }
 }
