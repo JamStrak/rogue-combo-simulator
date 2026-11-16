@@ -68,7 +68,7 @@ function replayAt(model,time,seen=Infinity) {
 if(typeof module!=='undefined')module.exports={makeReplay,replayAt};
 
 // 控件只播放当前已计算的结果。改动配置时由主界面重置。
-const replayPlayer={model:null,status:'ready',time:0,seen:0,frame:0,lastStamp:null,holdMs:0};
+const replayPlayer={model:null,status:'ready',time:0,seen:0,frame:0,lastStamp:null};
 function setupReplay(){
  const byId=id=>document.getElementById(id);
  const play=byId('combatPlay'),reset=byId('combatReset'),hp=byId('combatHealthInput'),speed=byId('combatSpeed');
@@ -151,9 +151,6 @@ function setupReplay(){
   if(!model)return;
   const ready=replayPlayer.status==='ready';
   const snap=ready?{energy:Math.min(model.cfg.max,model.cfg.start),damage:0,cp:0}:replayAt(model,replayPlayer.time,replayPlayer.seen);
-  if(!ready&&replayPlayer.holdMs>0&&snap.previous){
-   snap.step=snap.previous;snap.timedAction=null;snap.gap=null;snap.energyWaiting=false;
-  }
   const maximum=maxHealth();
   const remaining=Math.max(0,maximum-snap.damage);
   const energy=Math.max(0,Math.min(model.cfg.max,snap.energy));
@@ -185,7 +182,6 @@ function setupReplay(){
   replayPlayer.status='ready';
   replayPlayer.time=0;
   replayPlayer.seen=0;
-  replayPlayer.holdMs=0;
   logBox.replaceChildren();
   floatBox.replaceChildren();
   cue.replaceChildren();
@@ -200,7 +196,7 @@ function setupReplay(){
   if(event.type==='error')return `${event.name} · 中断`;
   return event.id==='wait'?'等待结束':event.name;
  }
- function showCue(event,before,after,duration){
+ function cueParts(event,before,after){
   const row=replayPlayer.model.actions.find(action=>action.index===event.index);
   const title=document.createElement('strong');
   title.textContent=eventLabel(event);
@@ -215,9 +211,13 @@ function setupReplay(){
   if(event.damage>0)add(`伤害 ${number(event.damage)}${event.crit===true||event.critMode==='rolled-crit'?' 暴击':''}`,'damage');
   if(event.type==='error')add('未施放','error');
   if(!detail.childNodes.length)add('状态已更新','neutral');
+  return [title,detail];
+ }
+ function showCues(parts){
+  if(!parts.length)return;
   cue.classList.remove('visible');
-  cue.replaceChildren(title,detail);
-  cue.style.setProperty('--cue-duration',`${duration}ms`);
+  cue.replaceChildren(...parts);
+  cue.style.setProperty('--cue-duration','800ms');
   void cue.offsetWidth;
   cue.classList.add('visible');
  }
@@ -259,7 +259,6 @@ function setupReplay(){
   }
   if(event.type==='error')log.classList.add('combat-event-error');
   logBox.prepend(log);
-  while(logBox.children.length>12)logBox.lastChild.remove();
   setText(actionText,title);
   if(event.type==='white')return event.hand==='main'?'hit-main':'hit-off';
   if(event.type==='bleed')return 'hit-bleed';
@@ -269,36 +268,27 @@ function setupReplay(){
   if(replayPlayer.status!=='playing')return;
   let elapsed=replayPlayer.lastStamp===null?0:Math.max(0,stamp-replayPlayer.lastStamp);
   replayPlayer.lastStamp=stamp;
-  if(replayPlayer.holdMs>0){
-   replayPlayer.holdMs=Math.max(0,replayPlayer.holdMs-elapsed);
-   if(replayPlayer.holdMs>0){paint();replayPlayer.frame=requestAnimationFrame(step);return;}
-   elapsed=0;
-  }
-  const model=replayPlayer.model,events=model.events,hits=new Set(),floatLanes=new Map();
+  const model=replayPlayer.model,events=model.events,hits=new Set(),floatLanes=new Map(),cueNodes=[];
   const target=Math.min(model.duration,replayPlayer.time+elapsed/1000*(Number(speed.value)||1));
-  let held=false;
   while(replayPlayer.seen<events.length&&events[replayPlayer.seen].time<=target+1e-9){
    const event=events[replayPlayer.seen];
-   replayPlayer.time=Math.max(replayPlayer.time,event.time);
-   const before=replayAt(model,replayPlayer.time,replayPlayer.seen);
+   const before=replayAt(model,event.time,replayPlayer.seen);
    const hit=present(event,floatLanes);
    replayPlayer.seen++;
    if(hit)hits.add(hit);
    if(['action','wait','error'].includes(event.type)){
-    const after=replayAt(model,replayPlayer.time,replayPlayer.seen);
-    replayPlayer.holdMs=Math.max(480,800/(Number(speed.value)||1));
-    showCue(event,before,after,replayPlayer.holdMs);
-    held=true;
-    break;
+    const after=replayAt(model,event.time,replayPlayer.seen);
+    cueNodes.push(...cueParts(event,before,after));
    }
   }
-  if(!held)replayPlayer.time=target;
+  replayPlayer.time=target;
+  showCues(cueNodes);
   if(hits.size){
    stage.classList.remove(...hitClasses);
    void stage.offsetWidth;
    stage.classList.add(...hits);
   }
-  if(!held&&replayPlayer.time>=model.duration&&replayPlayer.seen>=events.length){replayPlayer.status='done';stopFrame();}
+  if(replayPlayer.time>=model.duration&&replayPlayer.seen>=events.length){replayPlayer.status='done';stopFrame();}
   paint();
   if(replayPlayer.status==='playing')replayPlayer.frame=requestAnimationFrame(step);
  }
