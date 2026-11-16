@@ -245,3 +245,15 @@ main{width:100%;max-width:1370px;margin:0 auto;padding:18px 20px 0}
 @media(max-width:600px){#sequence .seq-damage-value{font-size:21px}#sequence .seq-energy-bar{height:23px}#sequence .seq-energy-value{line-height:21px}}
 #sequence .seqrow[data-points="4"]:not(.seq-blocked) .seq-combo-points{filter:drop-shadow(0 0 3px #e9c45b);}
 #sequence .seqrow[data-points="5"]:not(.seq-blocked) .seq-combo-point.is-active{border-color:#ffd19a;background:radial-gradient(circle at 35% 28%,#ffe9ac,#f17b32 50%,#a8311b);box-shadow:0 0 5px #ff793eaa}
+
+/* 本步实际暴击和天赋触发：图标可点开具体原因。 */
+#sequence .seq-proc-markers{display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-top:6px}
+#sequence .seq-proc-marker{display:inline-grid;place-items:center;flex:none;position:relative;width:26px;height:26px;min-width:0;padding:0;border:1px solid #788a65;border-radius:4px;background:#1c2a20;color:#f9e3a1;line-height:1;cursor:pointer}
+#sequence .seq-proc-marker:focus-visible{outline:2px solid #f7d979;outline-offset:2px}
+#sequence .seq-talent-marker img{display:block;width:100%;height:100%;object-fit:cover;border-radius:3px}
+#sequence .seq-talent-marker>span{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+#sequence .seq-crit-marker{border-color:#f4a64c;background:radial-gradient(circle,#f2c15b,#8e3b19 78%);color:#fff5c4;font-size:14px;font-weight:900;text-shadow:0 1px 2px #412208;box-shadow:0 0 7px #d58d3370}
+.sequence-detail .seq-proc-detail{margin:0 0 8px;padding:7px 9px;border:1px solid #5b714d;border-radius:4px;background:#1d2c20;color:#e1ecd8}
+.sequence-detail .seq-proc-detail strong{color:#c5e5aa}
+.sequence-detail .seq-proc-detail ul{margin:4px 0 0;padding-left:18px}
+@media(max-width:600px){#sequence .seq-proc-marker{width:32px;height:32px}}

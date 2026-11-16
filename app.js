@@ -103,7 +103,7 @@ function showSequenceDetail(index,pinned=false){
  if(sequenceDetailIndex!==null)$(`[data-step-detail="${sequenceDetailIndex}"]`)?.setAttribute('aria-expanded','false');
  sequenceDetailIndex=index;sequenceDetailPinned=pinned;
  const row=sequenceRows.get(index),dmg=sequenceDamageRows.get(index);
- detail.innerHTML=`<div class="sequence-detail-head"><strong>第 ${index+1} 步 · ${escapeHtml(state.book[entry.id].name)}</strong><button type="button" data-sequence-close aria-label="关闭详情">×</button></div>${row?`${autoWaitCard(row)}${stageMetrics(row,dmg)}<div class="stage-flags">${stageFlags(row)}</div>${stageDetails(row,dmg)}`:'<p class="note-warning">前面的步骤已中断，尚未执行</p>'}`;
+ detail.innerHTML=`<div class="sequence-detail-head"><strong>第 ${index+1} 步 · ${escapeHtml(state.book[entry.id].name)}</strong><button type="button" data-sequence-close aria-label="关闭详情">×</button></div>${row?`${autoWaitCard(row)}${stageMetrics(row,dmg)}${procDetail(row,dmg)}<div class="stage-flags">${stageFlags(row)}</div>${stageDetails(row,dmg)}`:'<p class="note-warning">前面的步骤已中断，尚未执行</p>'}`;
  detail.hidden=false;anchor.setAttribute('aria-expanded','true');positionSequenceDetail(anchor);
 }
 
@@ -161,10 +161,11 @@ function setupDamageEditor(){
 }
 function damageLabel(row){return !row?'—':fmt(row.damage);}
 function attachWhiteHits(damage){
- const hits=damage.events.filter(event=>event.type==='white');let position=0;
+ const hits=damage.events.filter(event=>event.type==='white'),bleeds=damage.events.filter(event=>event.type==='bleed');let position=0,bleedPosition=0;
  for(const row of damage.rows){
-  row.whiteHits=[];
+  row.whiteHits=[];row.bleedHits=[];
   while(position<hits.length&&hits[position].time<=row.time+1e-9)row.whiteHits.push(hits[position++]);
+  while(bleedPosition<bleeds.length&&bleeds[bleedPosition].time<=row.time+1e-9)row.bleedHits.push(bleeds[bleedPosition++]);
  }
  damage.whiteTailHits=hits.slice(position);
 }
@@ -173,6 +174,36 @@ function whiteHitSummary(hits){
  return hands.join(' · ');
 }
 function whiteHitTimes(hits){return hits.length?hits.map(hit=>`${fmt(hit.time)}秒 ${hit.hand==='main'?'主手':'副手'} ${fmt(hit.damage)}${hit.crit===true?' 暴击':''}`).join('；'):'本阶段没有平砍命中';}
+// 标记只采用已判定的结果；按伤害行时间归属平砍与流血，不把概率期望视为暴击。
+function stepProcs(row,dmg){
+ const crit=[];
+ if(!row.error&&dmg?.directDamage>0&&dmg.critMode==='rolled-crit'){
+  const hands=[row.critOutcome?.main===true?'主手':'',row.critOutcome?.off===true?'副手':''].filter(Boolean).join('、');
+  crit.push(`${row.name}技能${hands?'（'+hands+'）':''}暴击`);
+ }
+ for(const hit of dmg?.whiteHits||[])if(hit.crit===true)crit.push(`${fmt(hit.time)} 秒${hit.hand==='main'?'主手':'副手'}平砍暴击`);
+ for(const hit of dmg?.bleedHits||[])if(hit.crit===true)crit.push(`${fmt(hit.time)} 秒${state.book[hit.id]?.name||hit.id}流血暴击`);
+ const talents=[];
+ if(!row.error){
+  const names=['无情打击','封印命运','先发制人','无情','靴中剑','穿刺之伤','强化破甲'];
+  for(const note of row.notes.flatMap(n=>n.split('；'))){
+   const name=names.find(n=>note.startsWith(n));
+   if(name&&(/^(?:无情打击|先发制人|无情|靴中剑|穿刺之伤) [\d.]+%：触发/.test(note)||/^封印命运触发/.test(note)||/^强化破甲：5 星返还/.test(note)))talents.push({name,description:note});
+  }
+ }
+ return {crit,talents};
+}
+function procDetail(row,dmg){
+ const {crit,talents}=stepProcs(row,dmg),items=[...crit,...talents.map(t=>t.description)];
+ return items.length?`<div class="seq-proc-detail"><strong>本步触发</strong><ul>${items.map(item=>`<li>${escapeHtml(item)}</li>`).join('')}</ul></div>`:'';
+}
+function procMarkers(row,dmg,index){
+ const {crit,talents}=stepProcs(row,dmg),button=(cls,label,content)=>`<button type="button" class="seq-proc-marker ${cls}" data-proc-detail="${index}" title="${escapeHtml(label)}" aria-label="${escapeHtml(label)}，查看本步详情">${content}</button>`;
+ const markers=[];
+ if(crit.length)markers.push(button('seq-crit-marker',crit.join('；'),'<span aria-hidden="true">暴</span>'));
+ for(const t of talents){const icon=talentVisuals[t.name]?.icon;markers.push(button('seq-talent-marker',t.description,`${icon?`<img src="assets/talents/${escapeHtml(icon)}" alt="">`:''}<span>${escapeHtml(t.name)}</span>`));}
+ return markers.length?`<div class="seq-proc-markers">${markers.join('')}</div>`:'';
+}
 function stageFlags(row,limit=Infinity){
  const notes=row.notes.flatMap(note=>note.split('；'));
  const flags=notes.filter(note=>row.error||/暴击 [\d.]+%：是(?!.*未触发)/.test(note)||/能量不足|可反制空档|控制空档|控制免疫|可能提前打破|连击点溢出/.test(note)||(!/未触发/.test(note)&&/暴击 [\d.]+%：是|(?:：|封印命运)触发|强化破甲：5 星返还/.test(note)));
@@ -262,7 +293,7 @@ function drawNearbyResult(v,damage){
   const points=Math.max(0,Math.min(5,row.cp));
   card.dataset.points=String(points);
   const pointHint=points===5?'，已满，注意溢出':points===4?'，可考虑终结技':'';
-  el.innerHTML=`${row.error?'<span class="note-warning">执行失败</span>':''}<div class="seq-visual-metrics"><div class="seq-energy-bar" role="progressbar" aria-label="结算后能量" aria-valuemin="0" aria-valuemax="${maxEnergy}" aria-valuenow="${row.after}" aria-valuetext="${escapeHtml(energyTitle)}" title="${escapeHtml(energyTitle)}"><span class="seq-energy-fill" style="width:${energyPercent}%"></span><span class="seq-energy-value">${fmt(row.after)} / ${fmt(maxEnergy)}</span></div><div class="seq-combo-points" role="img" aria-label="连击点 ${points} / 5${pointHint}" title="连击点 ${points} / 5${pointHint}">${Array.from({length:5},(_,i)=>`<span class="seq-combo-point${i<points?' is-active':''}" aria-hidden="true"></span>`).join('')}</div><div class="seq-damage" aria-label="本步伤害 ${damageLabel(dmg)}" title="本步伤害：技能、平砍及流血，不含未来尾伤"><b class="seq-damage-value">${damageLabel(dmg)}</b></div></div>${overflow?`<span class="note-overflow">${escapeHtml(overflow)}</span>`:''}${risk?`<span class="note-warning">${escapeHtml(risk)}</span>`:''}`;
+  el.innerHTML=`${row.error?'<span class="note-warning">执行失败</span>':''}<div class="seq-visual-metrics"><div class="seq-energy-bar" role="progressbar" aria-label="结算后能量" aria-valuemin="0" aria-valuemax="${maxEnergy}" aria-valuenow="${row.after}" aria-valuetext="${escapeHtml(energyTitle)}" title="${escapeHtml(energyTitle)}"><span class="seq-energy-fill" style="width:${energyPercent}%"></span><span class="seq-energy-value">${fmt(row.after)} / ${fmt(maxEnergy)}</span></div><div class="seq-combo-points" role="img" aria-label="连击点 ${points} / 5${pointHint}" title="连击点 ${points} / 5${pointHint}">${Array.from({length:5},(_,i)=>`<span class="seq-combo-point${i<points?' is-active':''}" aria-hidden="true"></span>`).join('')}</div><div class="seq-damage" aria-label="本步伤害 ${damageLabel(dmg)}" title="本步伤害：技能、平砍及流血，不含未来尾伤"><b class="seq-damage-value">${damageLabel(dmg)}</b></div></div>${overflow?`<span class="note-overflow">${escapeHtml(overflow)}</span>`:''}${risk?`<span class="note-warning">${escapeHtml(risk)}</span>`:''}${procMarkers(row,dmg,row.index)}`;
  });
  if(sequenceDetailIndex!==null)showSequenceDetail(sequenceDetailIndex,sequenceDetailPinned);
 }
@@ -350,7 +381,7 @@ $('.skill-panel').addEventListener('click',event=>{
  state.sequence.push(draftEntry(button.dataset.add));
  refresh();
 });
-$('#sequence').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.stepDetail!==undefined){const i=Number(b.dataset.stepDetail);if(sequenceDetailIndex===i&&sequenceDetailPinned)closeSequenceDetail();else showSequenceDetail(i,true);return;}if(b.dataset.up===undefined&&b.dataset.down===undefined&&b.dataset.del===undefined)return;let i=Number(b.dataset.up??b.dataset.down??b.dataset.del);if(b.dataset.del!==undefined)state.sequence.splice(i,1);else {let j=b.dataset.up!==undefined?i-1:i+1;if(j>=0&&j<state.sequence.length)[state.sequence[i],state.sequence[j]]=[state.sequence[j],state.sequence[i]]}refresh()};
+$('#sequence').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.procDetail!==undefined){const i=Number(b.dataset.procDetail);if(sequenceDetailIndex===i&&sequenceDetailPinned)closeSequenceDetail();else showSequenceDetail(i,true);return;}if(b.dataset.stepDetail!==undefined){const i=Number(b.dataset.stepDetail);if(sequenceDetailIndex===i&&sequenceDetailPinned)closeSequenceDetail();else showSequenceDetail(i,true);return;}if(b.dataset.up===undefined&&b.dataset.down===undefined&&b.dataset.del===undefined)return;let i=Number(b.dataset.up??b.dataset.down??b.dataset.del);if(b.dataset.del!==undefined)state.sequence.splice(i,1);else {let j=b.dataset.up!==undefined?i-1:i+1;if(j>=0&&j<state.sequence.length)[state.sequence[i],state.sequence[j]]=[state.sequence[j],state.sequence[i]]}refresh()};
 const sequenceElement=$('#sequence'),sequenceDetail=$('#sequenceDetail');
 sequenceElement.addEventListener('pointerover',e=>{const button=e.target.closest('[data-step-detail]');if(button&&e.pointerType==='mouse'&&!button.contains(e.relatedTarget)&&!sequenceDetailPinned)showSequenceDetail(Number(button.dataset.stepDetail));});
 sequenceElement.addEventListener('pointerout',e=>{const button=e.target.closest('[data-step-detail]');if(button&&!button.contains(e.relatedTarget)&&!sequenceDetail.contains(e.relatedTarget)&&!sequenceDetailPinned)closeSequenceDetail();});
@@ -358,7 +389,7 @@ sequenceElement.addEventListener('focusin',e=>{const button=e.target.closest('[d
 sequenceElement.addEventListener('focusout',e=>{if(e.target.closest('[data-step-detail]')&&!sequenceDetail.contains(e.relatedTarget)&&!sequenceDetailPinned)closeSequenceDetail();});
 sequenceDetail.addEventListener('pointerleave',e=>{if(!sequenceDetailPinned&&!e.relatedTarget?.closest?.('[data-step-detail]'))closeSequenceDetail();});
 sequenceDetail.addEventListener('click',e=>{if(e.target.closest('[data-sequence-close]'))closeSequenceDetail();});
-document.addEventListener('pointerdown',e=>{if(!sequenceDetail.hidden&&!sequenceDetail.contains(e.target)&&!e.target.closest('[data-step-detail]'))closeSequenceDetail();});
+document.addEventListener('pointerdown',e=>{if(!sequenceDetail.hidden&&!sequenceDetail.contains(e.target)&&!e.target.closest('[data-step-detail], [data-proc-detail]'))closeSequenceDetail();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!sequenceDetail.hidden){const anchor=$(`[data-step-detail="${sequenceDetailIndex}"]`);closeSequenceDetail();suppressSequenceFocus=true;anchor?.focus();suppressSequenceFocus=false;}});
 window.addEventListener('resize',()=>{if(sequenceDetailIndex!==null)positionSequenceDetail($(`[data-step-detail="${sequenceDetailIndex}"]`));});
 window.addEventListener('scroll',()=>{if(sequenceDetailIndex!==null)positionSequenceDetail($(`[data-step-detail="${sequenceDetailIndex}"]`));},{passive:true,capture:true});
