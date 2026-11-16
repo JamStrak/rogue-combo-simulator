@@ -38,9 +38,14 @@ function draftEntry(id){
  if(seconds!==undefined)return {id,wait:seconds};
  return id==='premed'?{id,offGcd:true}:{id};
 }
-function drawPalette(){
+function drawPalette(result){
  const seq=state.sequence,cfg=state.cfg,book=state.book;
+ const talentSkills={mutilate:'mutilate',ghost:'ghost',adrenaline:'adrenaline',coldblood:'coldblood',premed:'premedTalent',preparation:'preparationTalent',hemo:'hemoTalent',deathmark:'deathmarkTalent'};
  $('#palette').innerHTML=Object.entries(book).filter(([id])=>!Object.hasOwn(draftActions,id)&&id!=='leave').map(([id,s])=>{
+  const talentKey=talentSkills[id];
+  const requiresTree=['premed','preparation','hemo','deathmark'].includes(id);
+  const unlearned=talentKey&&(!requiresTree||cfg.enforceTalents)&&!cfg[talentKey];
+  const cooldown=result.cooldownRemaining?.[id]||0;
   const row=simulate([...seq,draftEntry(id)],cfg,book).rows.at(-1);
   let label='前序步骤中断',fit='blocked',cost='—';
   if(row?.index===seq.length){
@@ -53,9 +58,11 @@ function drawPalette(){
     label=`预计消耗 ${cost} 能量${fit==='energy'?`，需额外回能 ${fmt(row.energyWait)} 秒`:''}`;
    }
   }
+  if(unlearned){label='未学习对应天赋';fit='unlearned';}
+  if(cooldown>0)label+=` · 冷却 ${fmt(cooldown)} 秒`;
   const hint=escapeHtml(`${s.name}：${label}`);
   const icon=skillIcons[id];
-  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}"><span class="skill-picture">${icon?`<img src="${icon}" alt="" loading="lazy">`:''}<span class="skill-cost">${cost}</span></span><span class="skill-name">${escapeHtml(s.name)}</span></button>`;
+  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}" ${unlearned?'disabled':''}><span class="skill-picture">${icon?`<img src="${icon}" alt="" loading="lazy">`:''}${unlearned?'<span class="skill-cooldown">未学</span>':cooldown>0?`<span class="skill-cooldown">${fmt(cooldown)}秒</span>`:''}<span class="skill-cost">${cost}</span></span><span class="skill-name">${escapeHtml(s.name)}</span></button>`;
  }).join('');
 }
 function updateSkillCostHint(){const id=$('#editSkill').value,current=state.book[id].cost,standard=initial.book[id].cost;$('#editBaseNote').textContent=Number(current)!==Number(standard)?`当前基础消耗 ${fmt(current)}，默认 ${fmt(standard)}；天赋和被动会继续减免。`:'填写未减免的基础消耗；天赋和被动会另行计算。';}
@@ -148,8 +155,15 @@ function drawDraftEnergy(result){
  $('#draftCombat').textContent=`${combat}${stealthStatus}${poised}`;
  const stealthButton=$('[data-add="stealth"]');
  stealthButton.title=inCombat?'潜行需要先脱战':stealthCooldownRemaining>0?`潜行冷却剩余 ${fmt(stealthCooldownRemaining)} 秒`:'可进入潜行';
+ stealthButton.querySelector('.draft-stealth-cd').textContent=stealthCooldownRemaining>0?`${fmt(stealthCooldownRemaining)}秒`:'';
  const last=state.sequence.at(-1),seconds=draftActions[last?.id]?.seconds;
  $('#draftTiming').hidden=seconds===undefined;
+ const swingInfo=$('#draftSwingInfo');
+ swingInfo.hidden=last?.id!=='wait';
+ if(!swingInfo.hidden){
+  const weapon=state.damage.weapon;
+  swingInfo.textContent=!weapon.enabled?'平砍伤害计算已关闭':autoAttacking?`等待期间继续平砍 · 主手 ${fmt(weapon.mainSpeed)} 秒 / 副手 ${fmt(weapon.offSpeed)} 秒`:'当前已停手，等待期间不会平砍';
+ }
  if(seconds!==undefined){
   $('#draftTimingLabel').textContent=`调整末步${state.book[last.id].name}时长`;
   const input=$('#draftDuration');
@@ -189,7 +203,7 @@ function drawGearOverview(){
  $('#gearSkillCrit').innerHTML=skillRates.map(([name,rate])=>`<span>${name} <b>${fmt(rate)}%</b></span>`).join('');
  $('#gearCritGuide').textContent=`通用暴击 ${fmt(critRate)}% · 主手白字 ${fmt(mainCrit)}% · 副手白字 ${fmt(offCrit)}%。基础值不含恶意、劈斩和技能专属天赋。`;
 }
-function drawResult(){drawGearOverview();drawPalette();const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const v=simulate(state.sequence,state.cfg,state.book),damage=calculateDamage(state.sequence,v,state.cfg,state.damage),damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
+function drawResult(){drawGearOverview();const v=simulate(state.sequence,state.cfg,state.book);drawPalette(v);const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const damage=calculateDamage(state.sequence,v,state.cfg,state.damage),damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
 $('#damageMethod').textContent='平砍按武器速度和面板攻击强度估算，暴击按装备设置结算；敌对技能开启自动攻击，停砍、避战、消失、脱战、凿击和致盲会停手，之后敌对技能重新开始计时。末步控制期间的平砍单列，不随流血尾伤延长。刺击按副手武器和可调整倍率估算，是否额外受副手惩罚有待验证。技能按选定模式计算；忽略护甲、命中、躲闪、武器触发和毒药；流血跳伤仍可能提前打破控制但尚未模拟。计入刺击、伏击、鬼魅攻击、出血、毁伤、背刺、邪恶攻击、凿击、刺骨的直接伤害，及绞喉、割裂的逐跳流血。'+(state.damage.bleedCritMode==='random'?'流血每跳独立掷骰，同种子结果可复现，可重新掷骰。':'流血按暴击概率计算期望。')+'直接攻击有掷骰则沿用，否则按期望估算。相同流血重施覆盖旧效果；爆发窗口含起点、不含终点。平均值以推演结束和最后伤害时刻中较晚者为分母。未计毒药、武器触发及未自动套用的伤害天赋。';
 const ticks=damage.events.filter(event=>event.type==='bleed');$('#bleedTimeline').innerHTML=ticks.length?`<p class="small">${state.damage.bleedCritMode==='random'?'逐跳独立判定暴击':'每跳显示含暴击概率的期望伤害'}；总计 ${ticks.length} 跳，列出前 ${Math.min(ticks.length,1000)} 跳。</p><div class="bleed-timeline">${ticks.slice(0,1000).map(event=>`<span>${fmt(event.time)} 秒 · ${state.book[event.id].name} <b${event.crit===true?' class="note-success"':''}>${fmt(event.damage)}${event.crit===true?' 暴击':event.crit===false?' 普通':' 期望'}</b></span>`).join('')}</div>`:'<p class="small">当前推演没有流血跳伤。</p>';
 $('#warnings').textContent=state.cfg.dr?'PvP 递减采用假设：同组第 2 / 3 次分别按设定比例，第 4 次免疫；重置从控制结束计时。':'PvP 递减当前关闭，控制时长可能高估。';$('#rows').innerHTML=v.rows.length?v.rows.map(x=>{const dmg=damageRows.get(x.index);return `<article class="stage-card${x.error?' error':''}"><div class="stage-head"><strong><span> ${String(x.index+1).padStart(2,'0')} </span>${escapeHtml(x.name)}</strong><time>${fmt(x.time)} 秒</time></div>${stageMetrics(x,dmg)}<div class="stage-flags">${stageFlags(x)}</div>${stageDetails(x,dmg)}</article>`}).join(''):'<div class="empty">添加技能后自动计算</div>';drawNearbyResult(v,damage);drawComboComparison();replayPlayer.update(state.sequence,v,damage,state.cfg);}
@@ -240,7 +254,7 @@ function setupWorkspaceNavigation(){
  const tabs=document.createElement('div');tabs.className='mobile-talent-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','天赋分支');tabs.innerHTML=talentTrees.map((tree,i)=>`<button type="button" role="tab" data-mobile-branch="${i}">${tree.name}</button>`).join('');$('#talentTree').before(tabs);tabs.onclick=e=>{const b=e.target.closest('[data-mobile-branch]');if(!b)return;mobileTalentBranch=Number(b.dataset.mobileBranch);updateTalentTabs();};
 }
 function updateTalentTabs(){const branches=[...document.querySelectorAll('#talentTree .talent-branch')];branches.forEach((branch,i)=>branch.classList.toggle('mobile-active',i===mobileTalentBranch));document.querySelectorAll('[data-mobile-branch]').forEach((tab,i)=>{tab.setAttribute('aria-selected',String(i===mobileTalentBranch));});}
-$('#draftActions').innerHTML=Object.entries(draftActions).map(([id,{label,seconds,tip}])=>`<button type="button" class="quiet" data-add="${id}" title="${tip}">${id==='stealth'&&skillIcons.stealth?`<img class="draft-stealth-icon" src="${skillIcons.stealth}" alt="">`:''}${label??skills[id].name}${seconds===undefined?'':`<small>${seconds}秒</small>`}</button>`).join('');
+$('#draftActions').innerHTML=Object.entries(draftActions).map(([id,{label,seconds,tip}])=>`<button type="button" class="quiet" data-add="${id}" title="${tip}">${id==='stealth'&&skillIcons.stealth?`<img class="draft-stealth-icon" src="${skillIcons.stealth}" alt="">`:''}${label??skills[id].name}${id==='stealth'?'<small class="draft-stealth-cd"></small>':seconds===undefined?'':`<small>${seconds}秒</small>`}</button>`).join('');
 setupDamageEditor();setupReplay();setupWorkspaceNavigation();syncConfig();editDraw();drawTalents();drawLibrary();refresh();
 numIds.forEach(id=>$('#'+id).addEventListener('input',e=>{if(e.target.value==='')return;let n=Number(e.target.value);if(!Number.isFinite(n)||n<Number(e.target.min)||n>Number(e.target.max))return;state.cfg[id]=n;if(id==='reduction')$('#dirtyDeeds').value=[0,10,20].includes(n)?String(n):'custom';drawResult();save()}));boolIds.forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=e.target.checked;drawResult();save()}));
 ['composure','exposeRank','ruthlessRank','ruthlessMode','relentlessRank','relentlessMode','initiativeRank','sealRank','bootRank','flashRank','punctureRank','ambushCritRank','efficientRank','dirtyTricksRank'].forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=id.endsWith('Mode')?e.target.value:Number(e.target.value);drawResult();save()}));

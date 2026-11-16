@@ -74,6 +74,10 @@ function simulate(sequence, cfg, book=skills, options={}) {
  const status=()=>({
   gcdReadyAt:ready,
   gcdRemaining:Math.max(0,ready-t),
+  cooldownRemaining:Object.fromEntries([
+   ...Object.entries(cooldowns).map(([id,ends])=>[id,Math.max(0,ends-t)]),
+   ['stealth',Math.max(0,stealthReadyAt-t)]
+  ].filter(([,remaining])=>remaining>epsilon)),
   energyAtGcd:energyAfter(energy,t,Math.max(t,ready),max,regen,adrenalineUntil),
   timeToFull:timeToEnergy(max),
   adrenalineUntil,inCombat,stealth,autoAttacking,combatAvoided,
