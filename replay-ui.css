@@ -274,10 +274,18 @@
   animation: combat-skill-rise 1.15s ease-out forwards;
 }
 .combat-stage[data-playback="paused"] .combat-skill-float img { animation-play-state: paused; }
+.combat-skill-float img.combat-skill-crit { animation-name: combat-skill-crit-rise; }
 @keyframes combat-skill-rise {
   from { transform: translateY(0); opacity: 1; }
   65% { opacity: 1; }
   to { transform: translateY(-75px); opacity: 0; }
+}
+@keyframes combat-skill-crit-rise {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  9% { transform: translateY(0) scale(1.4); }
+  18% { transform: translateY(0) scale(1); }
+  70% { opacity: 1; }
+  100% { transform: translateY(-75px) scale(1); opacity: 0; }
 }
 @media (max-width: 600px) {
   .combat-stage .combat-dummy { left: 55%; }

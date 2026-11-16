@@ -18,7 +18,7 @@ function makeReplay(sequence, simulation, damage, cfg) {
  const events=damage.events.filter(event=>event.type!=='direct').map(event=>({...event}));
  for(const row of actions){
   const hit=direct.get(row.index);
-  events.push({time:row.time,type:row.error?'error':row.wait?'wait':'action',id:row.id,index:row.index,name:row.name,damage:hit?.damage||0,crit:hit?.crit??null,critMode:hit?.critMode,notes:row.notes});
+  events.push({time:row.time,type:row.error?'error':row.wait?'wait':'action',id:row.id,index:row.index,name:row.name,damage:hit?.damage||0,crit:hit?.crit??null,critMode:hit?.critMode,skillCritical:row.critOutcome?.critical===true||hit?.crit===true||hit?.critMode==='rolled-crit',notes:row.notes});
  }
  const order={bleed:0,white:1,action:2,wait:2,error:2};
  events.sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
@@ -247,6 +247,7 @@ function setupReplay(){
    const icon=document.createElement('img');
    icon.src=skillIcons[event.id];
    icon.alt='';
+   if(event.skillCritical)icon.classList.add('combat-skill-crit');
    const stack=floatLanes.get('skill-icon')||0;
    floatLanes.set('skill-icon',stack+1);
    icon.style.setProperty('--skill-lane',Math.floor(stack/4));
