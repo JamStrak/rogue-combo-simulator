@@ -82,7 +82,7 @@ function simulate(sequence, cfg, book=skills, options={}) {
   ].filter(([,remaining])=>remaining>epsilon)),
   energyAtGcd:energyAfter(energy,t,Math.max(t,ready),max,regen,adrenalineUntil),
   timeToFull:timeToEnergy(max),
-  adrenalineUntil,inCombat,stealth,autoAttacking,combatAvoided,
+  adrenalineUntil,premedPending,premedUntil,inCombat,stealth,autoAttacking,combatAvoided,
   combatRemaining:inCombat?combatExitDelay-combatAvoided:0,
   stealthReadyAt,stealthCooldownRemaining:Math.max(0,stealthReadyAt-t)
  });

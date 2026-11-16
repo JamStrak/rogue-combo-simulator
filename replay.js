@@ -56,7 +56,7 @@ function replayAt(model,time) {
  let lo=0,hi=model.events.length;
  while(lo<hi){const mid=(lo+hi)>>1;if(model.events[mid].time<=t+1e-9)lo=mid+1;else hi=mid;}
  return {
-  time:t,energy,cp:previous?.cp||0,controlRemaining,damage:lo?model.events[lo-1].cumulative:0,
+  time:t,energy,cp:Math.max(0,(previous?.cp||0)-(previous?.premedPending&&t>=previous.premedUntil?previous.premedPending:0)),controlRemaining,damage:lo?model.events[lo-1].cumulative:0,
   step,gap,energyWaiting,timedAction,inCombat,autoAttacking,combatRemaining,stealth,blocked:previous?.error?previous:null,previous
  };
 }
@@ -71,6 +71,7 @@ function setupReplay(){
  const healthBar=byId('combatHealthBar'),healthText=byId('combatHealthText');
  const energyBar=byId('combatEnergyBar'),energyText=byId('combatEnergyText');
  const progress=byId('combatProgress'),timeText=byId('combatTime'),damageText=byId('combatDamage');
+ const combo=byId('combatCombo'),comboText=byId('combatComboText'),comboOrbs=[...combo.querySelectorAll('i')];
  const stepBox=document.createElement('div');
  stepBox.className='combat-step';
  stepBox.innerHTML='<span>连招步骤</span><strong id="combatStepIndex">—</strong><b id="combatStepName">等待播放</b>';
@@ -140,7 +141,7 @@ function setupReplay(){
   const model=replayPlayer.model;
   if(!model)return;
   const ready=replayPlayer.status==='ready';
-  const snap=ready?{energy:Math.min(model.cfg.max,model.cfg.start),damage:0}:replayAt(model,replayPlayer.time);
+  const snap=ready?{energy:Math.min(model.cfg.max,model.cfg.start),damage:0,cp:0}:replayAt(model,replayPlayer.time);
   const maximum=maxHealth();
   const remaining=Math.max(0,maximum-snap.damage);
   const energy=Math.max(0,Math.min(model.cfg.max,snap.energy));
@@ -154,6 +155,13 @@ function setupReplay(){
   progress.value=replayPlayer.time;
   setText(timeText,`${formatTenths.format(replayPlayer.time)} / ${formatTenths.format(model.duration)} 秒`);
   if(damageText)setText(damageText,number(snap.damage));
+  const cp=Math.max(0,Math.min(5,Number(snap.cp)||0));
+  if(combo.dataset.points!==String(cp)){
+   combo.dataset.points=String(cp);
+   combo.setAttribute('aria-label',`播放连击点 ${cp} / 5`);
+   setText(comboText,`${cp} / 5`);
+   comboOrbs.forEach((orb,index)=>orb.classList.toggle('active',index<cp));
+  }
   paintDiagnostics(model,snap,ready);
   const labels={playing:'暂停',paused:'继续',done:'重新播放',ready:'播放连招'};
   setText(play,labels[replayPlayer.status]);
