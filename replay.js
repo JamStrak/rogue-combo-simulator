@@ -1,7 +1,10 @@
 // 播放与原推演共享同一批结果，不重新掷骰。
+const replayEnergyAfter=typeof module!=='undefined'?require('./engine.js').energyAfter:energyAfter;
+const replayTimedActions=new Set(['wait','stop','evade']);
 function makeReplay(sequence, simulation, damage, cfg) {
- const actions=simulation.rows.map(row=>{
-  const id=sequence[row.index]?.id;
+ const actions=simulation.rows.map((row,index)=>{
+  const id=row.id??sequence[row.index]?.id;
+  const startTime=row.startTime??simulation.rows[index-1]?.time??0;
   const energyWaitStart=row.energyWait>0?row.time-row.energyWait:null;
   let gapTime=row.time-(row.controlGap||0);
   const gaps=(row.gapReasons||[]).map(reason=>{
@@ -9,7 +12,7 @@ function makeReplay(sequence, simulation, damage, cfg) {
    gapTime+=reason.duration;
    return {...reason,start,end:gapTime};
   });
-  return {...row,id,energyWaitStart,gaps};
+  return {...row,id,startTime,energyWaitStart,gaps};
  });
  const direct=new Map(damage.events.filter(event=>event.type==='direct').map(event=>[event.index,event]));
  const events=damage.events.filter(event=>event.type!=='direct').map(event=>({...event}));
@@ -24,32 +27,37 @@ function makeReplay(sequence, simulation, damage, cfg) {
  return {
   actions,events,stepCount:sequence.length,
   duration:Math.max(0,simulation.time||0,damage.endTime||0,simulation.controlEnd||0),
-  cfg:{start:Number(cfg.start)||0,max:Number(cfg.max)||100,regen:Number(cfg.regen)||0},
+  cfg:{start:Number(cfg.start)||0,max:Number(cfg.max)||100,regen:Number(cfg.regen)||0,startCombat:!!cfg.startCombat,startStealth:cfg.startStealth!==false},
   stopped:!!simulation.stopped
  };
 }
 function replayAt(model,time) {
  const t=Math.max(0,Math.min(model.duration,Number(time)||0));
  const {max,regen}=model.cfg;
- let energy=Math.min(max,model.cfg.start),lastTime=0,boostUntil=0,previous=null,next=null;
+ let previous=null,next=null;
  for(const row of model.actions){
   if(row.time>t+1e-9){next=row;break;}
-  energy=row.after;
-  lastTime=row.time;
   previous=row;
-  if(row.id==='adrenaline'&&!row.error)boostUntil=row.time+15;
  }
- const boostedTime=Math.max(0,Math.min(t,boostUntil)-lastTime);
- energy=Math.min(max,energy+regen*(Math.max(0,t-lastTime)+boostedTime));
+ const lastEnergy=previous?.after??Math.min(max,model.cfg.start);
+ const energy=replayEnergyAfter(lastEnergy,previous?.time??0,t,max,regen,previous?.adrenalineUntil);
  const controlRemaining=Math.max(0,(previous?.controlEnd||0)-t);
  const gap=next?.gaps.find(interval=>interval.start<=t+1e-9&&interval.end>t+1e-9)??null;
  const energyWaiting=next?.energyWaitStart!=null&&t+1e-9>=next.energyWaitStart;
- const step=energyWaiting||gap||next?.id==='wait'?next:previous;
+ const timedAction=next&&!next.error&&replayTimedActions.has(next.id)&&next.startTime<=t+1e-9?next:null;
+ const step=energyWaiting||gap||timedAction?next:previous;
+ const inCombat=timedAction?.combatChangedAt!=null&&timedAction.combatChangedAt<=t+1e-9
+  ?timedAction.inCombat:previous?.inCombat??model.cfg.startCombat;
+ const autoAttacking=timedAction?.autoAttackChangedAt!=null&&timedAction.autoAttackChangedAt<=t+1e-9
+  ?timedAction.autoAttacking:previous?.autoAttacking??false;
+ const combatRemaining=timedAction?.id==='evade'&&inCombat
+  ?Math.max(0,(timedAction.combatChangedAt??timedAction.time+timedAction.combatRemaining)-t):0;
+ const stealth=previous?.stealth??model.cfg.startStealth;
  let lo=0,hi=model.events.length;
  while(lo<hi){const mid=(lo+hi)>>1;if(model.events[mid].time<=t+1e-9)lo=mid+1;else hi=mid;}
  return {
   time:t,energy,cp:previous?.cp||0,controlRemaining,damage:lo?model.events[lo-1].cumulative:0,
-  step,gap,energyWaiting,blocked:previous?.error?previous:null,previous
+  step,gap,energyWaiting,timedAction,inCombat,autoAttacking,combatRemaining,stealth,blocked:previous?.error?previous:null,previous
  };
 }
 if(typeof module!=='undefined')module.exports={makeReplay,replayAt};
@@ -110,16 +118,22 @@ function setupReplay(){
   }else if(energyWaiting){
    setText(castStatus,`能量不足 · 等 ${seconds(step.time-snap.time)}`);
    setText(castDetail,`等到 ${number(step.before)} 能量后尝试施放`);
-  }else if(step?.id==='wait'&&step!==previous){
-   setText(castStatus,`主动等待 · ${seconds(step.time-snap.time)}`);
-   setText(castDetail,'');
+  }else if(snap.timedAction){
+   const remaining=seconds(step.time-snap.time);
+   if(step.id==='evade'){
+    setText(castStatus,snap.inCombat?`脱战等待 · ${seconds(snap.combatRemaining)}`:`已脱战 · 等 ${remaining}`);
+    setText(castDetail,snap.autoAttacking?'':'已停止自动攻击');
+   }else{
+    setText(castStatus,`${step.id==='wait'?'主动等待':step.name} · ${remaining}`);
+    setText(castDetail,'');
+   }
   }else if(delayed){
    setText(castStatus,`本步等待回能 ${number(previous.energyWait)} 秒`);
    setText(castDetail,'');
   }else{
    const done=replayPlayer.status==='done';
    setText(castStatus,ready?'准备就绪':done?(model.stopped?'连招中断':'连招已结束'):replayPlayer.status==='paused'?'已暂停':'推进中');
-   setText(castDetail,'');
+   setText(castDetail,snap.stealth?'已潜行':'');
   }
  }
  function paint(){

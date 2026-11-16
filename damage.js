@@ -104,33 +104,40 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
    event.damage*=event.crit?critMultiplier:1;
   }else event.damage*=bleedMultiplier;
  }
- // 白字从首次成功敌对动作开始计时；消失与脱战停止，下一次敌对动作重新起表。
- // 成功动作截止；同刻白字先于普通动作结算，但在消失/脱战时不结算。
+ // 双手白字按推演中的自动攻击状态分别计时，停手后由下一次成功敌对动作重新起表。
  const whiteEvents=[];
  if(weapon.enabled){
-  const self=new Set(['premed','preparation','coldblood','adrenaline','vanish','wait','leave','slice']);
+  const self=new Set(['premed','preparation','coldblood','adrenaline','wait','slice','stealth']);
+  const timedPause=new Set(['stop','evade']);
+  const pauses=new Set(['vanish','leave','gouge','blind',...timedPause]);
+  const idOf=row=>row.id??sequence[row.index]?.id;
+  const actions=simulation.rows.filter(row=>!row.error);
+  // 停手动作从区间开头生效，也要拦截恰好落在上一行结束时刻的白字。
+  const timedPauseTimes=new Set(actions.filter(row=>timedPause.has(idOf(row))).map(row=>row.startTime??row.time));
   let nextMain=null,nextOff=null;
   const roll=settings.whiteCritMode==='random';
   const mainDamage=roll?metrics.mainNormal:metrics.mainExpected,offDamage=roll?metrics.offNormal:metrics.offExpected;
-  for(const row of simulation.rows){
-   if(row.error)break;
-   const id=sequence[row.index]?.id;
-   if(nextMain!==null){
-    const inclusive=id!=='vanish'&&id!=='leave';
-    const due=t=>inclusive?t<=row.time+1e-9:t<row.time-1e-9;
-    while(due(nextMain)){if(mainDamage>0)whiteEvents.push({time:nextMain,type:'white',hand:'main',id:'mainhand',index:row.index,damage:mainDamage,crit:null});nextMain+=mainSpeed;}
-    while(due(nextOff)){if(offDamage>0)whiteEvents.push({time:nextOff,type:'white',hand:'off',id:'offhand',index:row.index,damage:offDamage,crit:null});nextOff+=offSpeed;}
+  function addSwingsThrough(time,index,inclusive){
+   const due=scheduled=>inclusive?scheduled<=time+1e-9:scheduled<time-1e-9;
+   while(due(nextMain)){if(mainDamage>0)whiteEvents.push({time:nextMain,type:'white',hand:'main',id:'mainhand',index,damage:mainDamage,crit:null});nextMain+=mainSpeed;}
+   while(due(nextOff)){if(offDamage>0)whiteEvents.push({time:nextOff,type:'white',hand:'off',id:'offhand',index,damage:offDamage,crit:null});nextOff+=offSpeed;}
+  }
+  for(const row of actions){
+   const id=idOf(row);
+   const running=nextMain!==null;
+   const active=row.autoAttacking??(!pauses.has(id)&&(running||Boolean(id&&!self.has(id))));
+   if(running){
+    const pauseTime=row.autoAttackChangedAt??(timedPause.has(id)?row.startTime:undefined);
+    const until=active?row.time:pauseTime??row.time;
+    const inclusive=!timedPauseTimes.has(until)&&id!=='vanish'&&id!=='leave';
+    addSwingsThrough(until,row.index,inclusive);
    }
-   if(id==='vanish'||id==='leave'||id==='gouge'||id==='blind'){nextMain=null;nextOff=null;}
-   else if(nextMain===null&&id&&!self.has(id)){nextMain=row.time+mainSpeed;nextOff=row.time+offSpeed;}
+   if(!active){nextMain=null;nextOff=null;}
+   else if(!running){const start=row.autoAttackChangedAt??row.time;nextMain=start+mainSpeed;nextOff=start+offSpeed;}
   }
-  // 最后动作之后，若仍处于有效控制则继续白字直到控制结束；但停止攻击状态不恢复。
-  const last=simulation.rows.filter(r=>!r.error).at(-1);
+  const last=actions.at(-1);
   const controlEnd=Math.max(0,number(last?.controlEnd,0));
-  if(last&&nextMain!==null&&controlEnd>last.time+1e-9){
-   while(nextMain<controlEnd-1e-9){if(mainDamage>0)whiteEvents.push({time:nextMain,type:'white',hand:'main',id:'mainhand',index:last.index,damage:mainDamage,crit:null});nextMain+=mainSpeed;}
-   while(nextOff<controlEnd-1e-9){if(offDamage>0)whiteEvents.push({time:nextOff,type:'white',hand:'off',id:'offhand',index:last.index,damage:offDamage,crit:null});nextOff+=offSpeed;}
-  }
+  if(last&&nextMain!==null&&controlEnd>last.time+1e-9)addSwingsThrough(controlEnd,last.index,false);
  }
  whiteEvents.sort((a,b)=>a.time-b.time||a.index-b.index);
  if(settings.whiteCritMode==='random'){

@@ -27,24 +27,46 @@ if(!state.talents || validateTalents(state.talents)) {state.talents=blankTalents
 // Older saved builds predate the weapon-specific critical strike mapping.
 if(state.talentsApplied&&state.cfg.slashRank===undefined)state.cfg.slashRank=state.talents[1][16]||0;
 if(state.talentsApplied&&state.cfg.lethalityRank===undefined)state.cfg.lethalityRank=state.talents[0][8]||0;
+if(state.talentsApplied&&state.cfg.camouflageRank===undefined)state.cfg.camouflageRank=state.talents[2][4]||0;
 let selectedTalent=null, mobileTalentBranch=0;
 const numIds=['start','max','regen','gcd','reduction','drReset','drSecond','drThird','crit','gapTolerance','flawlessReduction'], boolIds=['prepared','startStealth','startCombat','mutilate','adrenaline','coldblood','ghost','autoWait','dr'];
 function save(){try{localStorage.setItem('shadow-calc-v1',JSON.stringify(state));return true}catch{return false}}
 function syncConfig(){$('#dirtyDeeds').value=[0,10,20].includes(Number(state.cfg.reduction))?String(state.cfg.reduction):'custom';numIds.forEach(id=>$('#'+id).value=state.cfg[id]);boolIds.forEach(id=>$('#'+id).checked=state.cfg[id]);['composure','exposeRank','ruthlessRank','ruthlessMode','relentlessRank','relentlessMode','initiativeRank','sealRank','bootRank','flashRank','punctureRank','ambushCritRank','efficientRank','dirtyTricksRank'].forEach(id=>$('#'+id).value=String(state.cfg[id]));}
+const draftActions={wait:{seconds:1,tip:'维持当前攻击状态并经过一段时间'},stop:{label:'停砍',seconds:1,tip:'停止平砍并经过一段时间'},evade:{seconds:6,tip:'停止平砍并按无交战情形推演脱战'},stealth:{tip:'已脱战时进入潜行'}};
+function draftEntry(id){
+ const seconds=draftActions[id]?.seconds;
+ if(seconds!==undefined)return {id,wait:seconds};
+ return id==='premed'?{id,offGcd:true}:{id};
+}
 function drawPalette(){
  const seq=state.sequence,cfg=state.cfg,book=state.book;
- $('#palette').innerHTML=Object.entries(book).map(([id,s])=>{
-  let label=s.wait?'自由间隔':s.leave?'手动标记':'',cost='—';
-  if(!label){const entry={id,...(id==='premed'?{offGcd:true}:{})},result=simulate([...seq,entry],cfg,book),row=result.rows.at(-1);
-   label=!row||row.index!==seq.length?'前序步骤中断':row.error?'当前条件不足':`预计消耗 ${fmt(row.cost)} 能量`;
-   if(row&&row.index===seq.length&&!row.error)cost=fmt(row.cost);
+ $('#palette').innerHTML=Object.entries(book).filter(([id])=>!Object.hasOwn(draftActions,id)&&id!=='leave').map(([id,s])=>{
+  const row=simulate([...seq,draftEntry(id)],cfg,book).rows.at(-1);
+  let label='前序步骤中断',fit='blocked',cost='—';
+  if(row?.index===seq.length){
+   if(row.error){
+    label=`当前条件不足 · ${row.notes[0]}`;
+    if(row.energyShortage)fit='energy';
+   }else{
+    cost=fmt(row.cost);
+    fit=row.energyWait>0?'energy':'ready';
+    label=`预计消耗 ${cost} 能量${fit==='energy'?`，需额外回能 ${fmt(row.energyWait)} 秒`:''}`;
+   }
   }
-  return `<button class="skill${cost==='—'?' skill-na':''}" data-add="${id}" title="${escapeHtml(s.name+'：'+label)}" aria-label="${escapeHtml(s.name+'：'+label)}">${escapeHtml(s.name)}<span>(${cost})</span></button>`;
+  const hint=escapeHtml(`${s.name}：${label}`);
+  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}">${escapeHtml(s.name)}<span>(${cost})</span></button>`;
  }).join('');
 }
 function updateSkillCostHint(){const id=$('#editSkill').value,current=state.book[id].cost,standard=initial.book[id].cost;$('#editBaseNote').textContent=Number(current)!==Number(standard)?`当前基础消耗 ${fmt(current)}，默认 ${fmt(standard)}；天赋和被动会继续减免。`:'填写未减免的基础消耗；天赋和被动会另行计算。';}
-function editDraw(){const sel=$('#editSkill'), current=sel.value;sel.innerHTML=Object.entries(state.book).filter(([id])=>id!=='wait'&&id!=='leave').map(([id,s])=>`<option value="${id}">${s.name}</option>`).join('');if(state.book[current])sel.value=current;const s=state.book[sel.value];['Cost','Gain','Cc','Cd'].forEach(n=>$('#edit'+n).value=s[n.toLowerCase()]);$('#editDr').value=s.dr||'';$('#editDr').disabled=!s.type;updateSkillCostHint();}
-function drawSequence(){const dest=$('#sequence');if(!state.sequence.length){dest.innerHTML='<div class="empty">从上方选择技能，开始构建你的连招。</div>';return}dest.innerHTML=state.sequence.map((a,i)=>`<div class="seqrow"><span class="seqindex">${String(i+1).padStart(2,'0')}</span><strong>${state.book[a.id].name}</strong>${a.id==='wait'?`<label class="waitfield">等待 <input data-wait="${i}" type="number" min="0" max="120" step="0.1" value="${Number(a.wait??1)}"> 秒</label>`:a.id==='leave'?'<span class="offgcd">手动假设已脱离战斗</span>':`<label class="offgcd"><input type="checkbox" data-off="${i}" ${a.offGcd?'checked':''}> 不占公共CD</label>`}<div class="rowbuttons"><button data-up="${i}" aria-label="上移" ${i===0?'disabled':''}>↑</button><button data-down="${i}" aria-label="下移" ${i===state.sequence.length-1?'disabled':''}>↓</button><button data-del="${i}" aria-label="移除">×</button></div><div class="seq-preview" data-step-preview="${i}"></div></div>`).join('');}
+function editDraw(){const sel=$('#editSkill'), current=sel.value;sel.innerHTML=Object.entries(state.book).filter(([id])=>!Object.hasOwn(draftActions,id)&&id!=='leave').map(([id,s])=>`<option value="${id}">${s.name}</option>`).join('');if([...sel.options].some(option=>option.value===current))sel.value=current;const s=state.book[sel.value];['Cost','Gain','Cc','Cd'].forEach(n=>$('#edit'+n).value=s[n.toLowerCase()]);$('#editDr').value=s.dr||'';$('#editDr').disabled=!s.type;updateSkillCostHint();}
+function sequenceControls(entry,index){
+ const seconds=draftActions[entry.id]?.seconds;
+ if(seconds!==undefined)return `<label class="waitfield">时长 <input data-wait="${index}" type="number" min="0" max="120" step="0.1" inputmode="decimal" value="${Number(entry.wait??seconds)}"> 秒</label>`;
+ if(entry.id==='leave')return '<span class="offgcd">手动假设已脱离战斗</span>';
+ if(entry.id==='stealth')return '<span class="offgcd">脱战后可潜行</span>';
+ return `<label class="offgcd"><input type="checkbox" data-off="${index}" ${entry.offGcd?'checked':''}> 不占公共CD</label>`;
+}
+function drawSequence(){const dest=$('#sequence');if(!state.sequence.length){dest.innerHTML='<div class="empty">从上方选择技能，开始构建你的连招。</div>';return}dest.innerHTML=state.sequence.map((a,i)=>`<div class="seqrow"><span class="seqindex">${String(i+1).padStart(2,'0')}</span><strong>${escapeHtml(state.book[a.id].name)}</strong>${sequenceControls(a,i)}<div class="rowbuttons"><button data-up="${i}" aria-label="上移" ${i===0?'disabled':''}>↑</button><button data-down="${i}" aria-label="下移" ${i===state.sequence.length-1?'disabled':''}>↓</button><button data-del="${i}" aria-label="移除">×</button></div><div class="seq-preview" data-step-preview="${i}"></div></div>`).join('');}
 function drawCompare(){const c=state.cfg,b=state.book;$('#costCompare').innerHTML=['cheap','ambush','garrote'].map(id=>{let full=skillCost(id,c,b,c.max,false).cost, normal=skillCost(id,c,b,c.max,true).cost;return `<article><span>${b[id].name}</span><p><small>脱战满能量</small><b>${fmt(full)}</b></p><p><small>战斗中 / 未满</small><b>${fmt(normal)}</b></p></article>`}).join('');}
 function renderNotes(notes,error=false){
  return notes.flatMap(note=>note.split('；')).map(note=>{
@@ -103,14 +125,41 @@ function stageFlags(row,limit=Infinity){
 }
 function stageMetrics(row,dmg){
  const control=row.controlEnd>row.time?fmt(row.controlEnd-row.time)+'秒':'无';
- return `<div class="stage-primary"><div class="stage-damage"><span>本步伤害</span><b>${damageLabel(dmg)}</b></div><div class="stage-cumulative"><span>累计至此</span><b>${dmg?fmt(dmg.cumulative):'—'}</b></div></div><div class="stage-stats"><span>能量 <b>${fmt(row.before)} → ${fmt(row.after)}</b></span><span>连击点 <b class="stage-stars" aria-label="${row.cp} 星">${'●'.repeat(row.cp)}<i>${'○'.repeat(5-row.cp)}</i></b></span><span>控制剩余 <b>${control}</b></span></div>`;
+ return `<div class="stage-primary"><div class="stage-damage"><span>本步伤害</span><b>${damageLabel(dmg)}</b></div><div class="stage-cumulative"><span>累计至此</span><b>${dmg?fmt(dmg.cumulative):'—'}</b></div></div><div class="stage-stats"><span>能量 <b class="stage-energy">${fmt(row.before)} → ${fmt(row.after)}</b></span><span>连击点 <b class="stage-stars" aria-label="${row.cp} 星">${'●'.repeat(row.cp)}<i>${'○'.repeat(5-row.cp)}</i></b></span><span>控制剩余 <b>${control}</b></span></div>`;
 }
 function stageDetails(row,dmg){
  return `<details class="stage-details"><summary>展开详细分析</summary><div>${dmg?`本步伤害 = 技能 ${fmt(dmg.directDamage)} + 平砍 ${fmt(dmg.whiteDamage)} + 流血 ${fmt(dmg.bleedDamage)}；累计不含未来尾伤。<br>`:'未执行<br>'}${renderNotes(row.notes,row.error)}</div></details>`;
 }
+function drawDraftEnergy(result){
+ const {energy,gcdRemaining,energyAtGcd,timeToFull,inCombat,stealth,autoAttacking,combatRemaining,stealthCooldownRemaining}=result;
+ const max=state.cfg.max,bar=$('#draftEnergyBar');
+ bar.max=max;
+ bar.value=energy;
+ const number=`${fmt(energy)} / ${fmt(max)}`;
+ bar.setAttribute('aria-valuetext',`${number} 点能量`);
+ $('#draftEnergyText').textContent=number;
+ $('#draftGcd').textContent=gcdRemaining>0?`公共 CD ${fmt(gcdRemaining)} 秒 · 届时 ${fmt(energyAtGcd)} 能量`:'公共 CD 就绪';
+ $('#draftEnergyFull').textContent=timeToFull===0?'能量已满':Number.isFinite(timeToFull)?`${fmt(timeToFull)} 秒回满`:'自然回能关闭';
+ const attack=autoAttacking?(state.damage.weapon.enabled?'平砍中':'平砍伤害关闭'):'已停手';
+ const combat=inCombat?`战斗中 · ${attack} · 避战需 ${fmt(combatRemaining)} 秒`:'已脱战';
+ const stealthStatus=stealth?' · 已潜行':stealthCooldownRemaining>0?` · 潜行冷却 ${fmt(stealthCooldownRemaining)} 秒`:inCombat?'':' · 可潜行';
+ const poised=state.cfg.prepared&&!inCombat&&timeToFull===0?' · 蓄势待发':'';
+ $('#draftCombat').textContent=`${combat}${stealthStatus}${poised}`;
+ const stealthButton=$('[data-add="stealth"]');
+ stealthButton.title=inCombat?'潜行需要先脱战':stealthCooldownRemaining>0?`潜行冷却剩余 ${fmt(stealthCooldownRemaining)} 秒`:'可进入潜行';
+ const last=state.sequence.at(-1),seconds=draftActions[last?.id]?.seconds;
+ $('#draftTiming').hidden=seconds===undefined;
+ if(seconds!==undefined){
+  $('#draftTimingLabel').textContent=`调整末步${state.book[last.id].name}时长`;
+  const input=$('#draftDuration');
+  const value=last.wait??seconds;
+  if(input.valueAsNumber!==Number(value))input.value=value;
+ }
+}
 function drawNearbyResult(v,damage){
  const last=v.rows.at(-1), panel=$('#livePreview'),byDamage=new Map(damage.rows.map(row=>[row.index,row]));
- if(!last){panel.innerHTML='<div class="live-title"><strong>即时推演</strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div><div class="live-empty">点击下方技能，结果会显示在这里。</div>';}
+ drawDraftEnergy(v);
+ if(!last){panel.innerHTML='<div class="live-title"><strong>即时推演</strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div><div class="live-empty">添加技能后显示本步伤害和控制。</div>';}
  else{
   const blocked=v.stopped?' · 已中断'+(state.sequence.length>last.index+1?'，后续未执行':''):'';
   panel.innerHTML=`<div class="live-title"><strong>第 ${last.index+1} 步 · ${escapeHtml(last.name)} <small>${fmt(last.time)}秒${blocked}</small></strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div>${stageMetrics(last,byDamage.get(last.index))}<div class="stage-flags">${stageFlags(last,2)}</div>`;
@@ -140,7 +189,7 @@ function drawGearOverview(){
  $('#gearCritGuide').textContent=`通用暴击 ${fmt(critRate)}% · 主手白字 ${fmt(mainCrit)}% · 副手白字 ${fmt(offCrit)}%。基础值不含恶意、劈斩和技能专属天赋。`;
 }
 function drawResult(){drawGearOverview();drawPalette();const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const v=simulate(state.sequence,state.cfg,state.book),damage=calculateDamage(state.sequence,v,state.cfg,state.damage),damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
-$('#damageMethod').textContent='平砍按武器速度和面板攻击强度估算，暴击按期望；敌对技能开启自动攻击，消失、脱战、凿击和致盲假设停手，之后敌对技能重新开始计时。末步控制期间的平砍单列，不随流血尾伤延长。刺击按副手武器和可调整倍率估算，是否额外受副手惩罚有待验证。技能按选定模式计算；忽略护甲、命中、躲闪、武器触发和毒药；流血跳伤仍可能提前打破控制但尚未模拟。计入刺击、伏击、鬼魅攻击、出血、毁伤、背刺、邪恶攻击、凿击、刺骨的直接伤害，及绞喉、割裂的逐跳流血。'+(state.damage.bleedCritMode==='random'?'流血每跳独立掷骰，同种子结果可复现，可重新掷骰。':'流血按暴击概率计算期望。')+'直接攻击有掷骰则沿用，否则按期望估算。相同流血重施覆盖旧效果；爆发窗口含起点、不含终点。平均值以推演结束和最后伤害时刻中较晚者为分母。未计毒药、武器触发及未自动套用的伤害天赋。';
+$('#damageMethod').textContent='平砍按武器速度和面板攻击强度估算，暴击按装备设置结算；敌对技能开启自动攻击，停砍、避战、消失、脱战、凿击和致盲会停手，之后敌对技能重新开始计时。末步控制期间的平砍单列，不随流血尾伤延长。刺击按副手武器和可调整倍率估算，是否额外受副手惩罚有待验证。技能按选定模式计算；忽略护甲、命中、躲闪、武器触发和毒药；流血跳伤仍可能提前打破控制但尚未模拟。计入刺击、伏击、鬼魅攻击、出血、毁伤、背刺、邪恶攻击、凿击、刺骨的直接伤害，及绞喉、割裂的逐跳流血。'+(state.damage.bleedCritMode==='random'?'流血每跳独立掷骰，同种子结果可复现，可重新掷骰。':'流血按暴击概率计算期望。')+'直接攻击有掷骰则沿用，否则按期望估算。相同流血重施覆盖旧效果；爆发窗口含起点、不含终点。平均值以推演结束和最后伤害时刻中较晚者为分母。未计毒药、武器触发及未自动套用的伤害天赋。';
 const ticks=damage.events.filter(event=>event.type==='bleed');$('#bleedTimeline').innerHTML=ticks.length?`<p class="small">${state.damage.bleedCritMode==='random'?'逐跳独立判定暴击':'每跳显示含暴击概率的期望伤害'}；总计 ${ticks.length} 跳，列出前 ${Math.min(ticks.length,1000)} 跳。</p><div class="bleed-timeline">${ticks.slice(0,1000).map(event=>`<span>${fmt(event.time)} 秒 · ${state.book[event.id].name} <b${event.crit===true?' class="note-success"':''}>${fmt(event.damage)}${event.crit===true?' 暴击':event.crit===false?' 普通':' 期望'}</b></span>`).join('')}</div>`:'<p class="small">当前推演没有流血跳伤。</p>';
 $('#warnings').textContent=state.cfg.dr?'PvP 递减采用假设：同组第 2 / 3 次分别按设定比例，第 4 次免疫；重置从控制结束计时。':'PvP 递减当前关闭，控制时长可能高估。';$('#rows').innerHTML=v.rows.length?v.rows.map(x=>{const dmg=damageRows.get(x.index);return `<article class="stage-card${x.error?' error':''}"><div class="stage-head"><strong><span> ${String(x.index+1).padStart(2,'0')} </span>${escapeHtml(x.name)}</strong><time>${fmt(x.time)} 秒</time></div>${stageMetrics(x,dmg)}<div class="stage-flags">${stageFlags(x)}</div>${stageDetails(x,dmg)}</article>`}).join(''):'<div class="empty">添加技能后自动计算</div>';drawNearbyResult(v,damage);drawComboComparison();replayPlayer.update(state.sequence,v,damage,state.cfg);}
 function escapeHtml(value){return String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}
@@ -190,14 +239,35 @@ function setupWorkspaceNavigation(){
  const tabs=document.createElement('div');tabs.className='mobile-talent-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','天赋分支');tabs.innerHTML=talentTrees.map((tree,i)=>`<button type="button" role="tab" data-mobile-branch="${i}">${tree.name}</button>`).join('');$('#talentTree').before(tabs);tabs.onclick=e=>{const b=e.target.closest('[data-mobile-branch]');if(!b)return;mobileTalentBranch=Number(b.dataset.mobileBranch);updateTalentTabs();};
 }
 function updateTalentTabs(){const branches=[...document.querySelectorAll('#talentTree .talent-branch')];branches.forEach((branch,i)=>branch.classList.toggle('mobile-active',i===mobileTalentBranch));document.querySelectorAll('[data-mobile-branch]').forEach((tab,i)=>{tab.setAttribute('aria-selected',String(i===mobileTalentBranch));});}
+$('#draftActions').innerHTML=Object.entries(draftActions).map(([id,{label,seconds,tip}])=>`<button type="button" class="quiet" data-add="${id}" title="${tip}">${label??skills[id].name}${seconds===undefined?'':`<small>${seconds}秒</small>`}</button>`).join('');
 setupDamageEditor();setupReplay();setupWorkspaceNavigation();syncConfig();editDraw();drawTalents();drawLibrary();refresh();
 numIds.forEach(id=>$('#'+id).addEventListener('input',e=>{if(e.target.value==='')return;let n=Number(e.target.value);if(!Number.isFinite(n)||n<Number(e.target.min)||n>Number(e.target.max))return;state.cfg[id]=n;if(id==='reduction')$('#dirtyDeeds').value=[0,10,20].includes(n)?String(n):'custom';drawResult();save()}));boolIds.forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=e.target.checked;drawResult();save()}));
 ['composure','exposeRank','ruthlessRank','ruthlessMode','relentlessRank','relentlessMode','initiativeRank','sealRank','bootRank','flashRank','punctureRank','ambushCritRank','efficientRank','dirtyTricksRank'].forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=id.endsWith('Mode')?e.target.value:Number(e.target.value);drawResult();save()}));
-$('#reroll').onclick=$('#rerollReplay').onclick=()=>{state.cfg.seed=(Math.random()*4294967295>>>0)||1;drawResult();save()};
+$('#reroll').onclick=$('#rerollReplay').onclick=$('#rerollBuilder').onclick=()=>{state.cfg.seed=(Math.random()*4294967295>>>0)||1;drawResult();save()};
 $('#editSkill').addEventListener('change',editDraw);['Cost','Gain','Cc','Cd'].forEach(n=>$('#edit'+n).addEventListener('input',e=>{if(e.target.value==='')return;let v=Number(e.target.value);if(Number.isFinite(v)&&v>=0&&v<=Number(e.target.max)){state.book[$('#editSkill').value][n.toLowerCase()]=v;if(n==='Cost')updateSkillCostHint();refresh()}}));$('#editDr').addEventListener('change',e=>{state.book[$('#editSkill').value].dr=e.target.value;refresh()});
-$('#restoreSkills').onclick=()=>{state.book=structuredClone(initial.book);editDraw();refresh()};$('#palette').onclick=e=>{let b=e.target.closest('[data-add]');if(b){state.sequence.push({id:b.dataset.add,...(b.dataset.add==='wait'?{wait:1}:{}),...(b.dataset.add==='premed'?{offGcd:true}:{})});refresh()}};
+$('#restoreSkills').onclick=()=>{state.book=structuredClone(initial.book);editDraw();refresh()};
+$('.skill-panel').addEventListener('click',event=>{
+ const button=event.target.closest('[data-add]');
+ if(!button)return;
+ state.sequence.push(draftEntry(button.dataset.add));
+ refresh();
+});
 $('#sequence').onclick=e=>{const b=e.target.closest('button');if(!b)return;let i=Number(b.dataset.up??b.dataset.down??b.dataset.del);if(b.dataset.del!==undefined)state.sequence.splice(i,1);else {let j=b.dataset.up!==undefined?i-1:i+1;if(j>=0&&j<state.sequence.length)[state.sequence[i],state.sequence[j]]=[state.sequence[j],state.sequence[i]]}refresh()};
-$('#sequence').oninput=e=>{if(e.target.dataset.wait!==undefined&&e.target.value!==''){let n=Number(e.target.value);if(n>=0&&n<=120){state.sequence[+e.target.dataset.wait].wait=n;drawResult();save()}}};$('#sequence').onchange=e=>{if(e.target.dataset.off!==undefined){state.sequence[+e.target.dataset.off].offGcd=e.target.checked;drawResult();save()}};
+function updateDuration(input,index){
+ const entry=state.sequence[index];
+ if(draftActions[entry?.id]?.seconds===undefined)return;
+ const seconds=input.valueAsNumber;
+ if(!Number.isFinite(seconds)||seconds<0||seconds>120)return;
+ entry.wait=seconds;
+ const queueInput=$(`[data-wait="${index}"]`);
+ if(queueInput&&queueInput!==input)queueInput.value=seconds;
+ drawResult();save();
+}
+$('#draftDuration').oninput=event=>updateDuration(event.target,state.sequence.length-1);
+$('#sequence').oninput=event=>{
+ if(event.target.dataset.wait!==undefined)updateDuration(event.target,Number(event.target.dataset.wait));
+};
+$('#sequence').onchange=e=>{if(e.target.dataset.off!==undefined){state.sequence[+e.target.dataset.off].offGcd=e.target.checked;drawResult();save()}};
 $('#savedCombo').onchange=()=>{const item=savedCombos().find(x=>x.id===$('#savedCombo').value);if(item)$('#comboName').value=item.name;};
 $('#saveCombo').onclick=()=>{const name=$('#comboName').value.trim();if(!name||!state.sequence.length){$('#comboMessage').textContent='请填写名称并先添加至少一个技能。';return;}if(savedCombos().some(x=>x.name===name)){$('#comboMessage').textContent='这个名称已存在，请换一个名称，或选择已有连招后点击更新。';return;}const id='combo-'+Date.now()+'-'+Math.random().toString(36).slice(2,9);state.savedCombos.push({id,name,sequence:structuredClone(state.sequence)});if(!save()){state.savedCombos.pop();$('#comboMessage').textContent='保存失败：浏览器不允许保存或存储空间已满。';return;}drawLibrary();$('#savedCombo').value=id;$('#compareB').value=id;drawComboComparison();$('#comboMessage').textContent=`已保存“${name}”。`;};
 $('#loadCombo').onclick=()=>{const item=savedCombos().find(x=>x.id===$('#savedCombo').value);if(!item){$('#comboMessage').textContent='请先选择已保存的连招。';return;}state.sequence=structuredClone(item.sequence);$('#comboName').value=item.name;refresh();$('#comboMessage').textContent=`已载入“${item.name}”，编辑后需点击“更新所选”才会覆盖保存版本。`;};

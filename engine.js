@@ -22,12 +22,32 @@ const skills = {
  garrote:{name:'绞喉', cost:50, gain:0, cp:1, cc:0, cd:0, stealth:true, breaks:true},
  vanish:{name:'消失', cost:0, gain:0, cp:0, cc:0, cd:300, vanish:true},
  wait:{name:'等待', cost:0, gain:0, cp:0, cc:0, cd:0, wait:true},
+ stop:{name:'停止自动攻击', cost:0, gain:0, cp:0, cc:0, cd:0, wait:true},
+ evade:{name:'避战', cost:0, gain:0, cp:0, cc:0, cd:0, wait:true},
+ stealth:{name:'潜行', cost:0, gain:0, cp:0, cc:0, cd:0},
  leave:{name:'确认脱战', cost:0, gain:0, cp:0, cc:0, cd:0, leave:true}
 };
+const combatExitDelay=6;
+const epsilon=1e-8;
+
+function energyAfter(energy, from, to, max, regen, adrenalineUntil=0){
+ const elapsed=Math.max(0,to-from);
+ const boosted=Math.max(0,Math.min(to,adrenalineUntil)-from);
+ const recovered=energy+regen*(elapsed+boosted);
+ return max-recovered<=epsilon?max:recovered;
+}
+
+function recoveryTime(needed, regen, boostedWindow){
+ if(needed<=epsilon)return 0;
+ if(regen<=0)return Infinity;
+ const boostedGain=2*regen*boostedWindow;
+ return needed<=boostedGain?needed/(2*regen):boostedWindow+(needed-boostedGain)/regen;
+}
+
 function skillCost(id, cfg, book, energy, inCombat) {
  const base=Number(book[id].cost);
  const talent=(id==='cheap'||id==='garrote')?Number(cfg.reduction||0):id==='expose'?5*Number(cfg.exposeRank||0):(['sinister','hemo'].includes(id)?[0,3,5][Number(cfg.efficientRank||0)]:id==='eviscerate'?Number(cfg.flawlessReduction||0):id==='blind'?base*0.25*Number(cfg.dirtyTricksRank||0):0);
- const poised=!!cfg.prepared&&!inCombat&&energy+1e-8>=cfg.max&&base>0;
+ const poised=!!cfg.prepared&&!inCombat&&energy+epsilon>=cfg.max&&base>0;
  const passive=poised?10+Number(cfg.composure||0):0;
  return {base,talent,passive,cost:Math.max(0,base-talent-passive)};
 }
@@ -40,7 +60,8 @@ function meleeCritChance(cfg,id,hand=id==='strike'?'off':'main'){
  return Math.max(0,Math.min(100,(Number(cfg.crit)||0)+(Number(cfg.maliceRank)||0)+weaponBonus+talentBonus));
 }
 function simulate(sequence, cfg, book=skills, options={}) {
- const max=cfg.max, regen=cfg.regen, gcd=cfg.gcd;
+ const max=cfg.max, regen=cfg.regen??10, gcd=cfg.gcd??1;
+ const stealthCooldown=10-2*Math.max(0,Math.min(3,Number(cfg.camouflageRank)||0));
  let seed=(Number(cfg.seed)||1)>>>0;
  // 纯伤害暴击独立掷骰，避免改变原本的能量、连击点及控制分支。
  let damageSeed=seed^0x5bd1e995;
@@ -48,21 +69,106 @@ function simulate(sequence, cfg, book=skills, options={}) {
  const rollDamage=chance=>chance>=100||(chance>0&&damageRandom()<chance/100);
  const roll=(chance,mode,label)=>{chance=Math.max(0,Math.min(100,chance));if(chance<=0)return false;if(chance>=100)return true;if(options.roll)return options.roll(chance,mode,label);if(mode==='yes')return true;if(mode==='no')return false;seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296<chance/100;};
  let premedPending=0, premedUntil=0, coldBloodActive=false, adrenalineUntil=0, t=0, energy=Math.min(cfg.start,max), cp=0, ready=0, controlEnd=0, controlType='', stealth=cfg.startStealth!==false, inCombat=!!cfg.startCombat, ghostUntil=-1, cooldowns={}, dr={}, activeDr='', rows=[], gap=0, controlled=0, totalEnergyWait=0, controlBroken=false, lastAction=null, stopped=false, gapReasons=[];
- const addEnergy = (dt)=>{ const before=energy; energy=Math.min(max,energy+regen*dt+regen*Math.max(0,Math.min(t+dt,adrenalineUntil)-t)); return energy-before; };
- const advance = (target,phase)=>{const d=Math.max(0,target-t); if(lastAction!==null){const uncovered=Math.max(0,target-Math.max(t,controlEnd)); gap+=uncovered;controlled+=d-uncovered;if(uncovered>1e-8)gapReasons.push({duration:uncovered,cause:controlBroken?'控制被伤害提前打破':controlEnd<=0?'此前没有有效控制':'控制已结束',phase});} let gained=addEnergy(d); t=target; if(premedPending&&t>=premedUntil){cp=Math.max(0,cp-premedPending);premedPending=0;} return gained;};
+ let autoAttacking=false, combatAvoided=0, stealthReadyAt=0;
+ const timeToEnergy=target=>recoveryTime(target-energy,regen,Math.max(0,adrenalineUntil-t));
+ const status=()=>({
+  gcdReadyAt:ready,
+  gcdRemaining:Math.max(0,ready-t),
+  energyAtGcd:energyAfter(energy,t,Math.max(t,ready),max,regen,adrenalineUntil),
+  timeToFull:timeToEnergy(max),
+  adrenalineUntil,inCombat,stealth,autoAttacking,combatAvoided,
+  combatRemaining:inCombat?combatExitDelay-combatAvoided:0,
+  stealthReadyAt,stealthCooldownRemaining:Math.max(0,stealthReadyAt-t)
+ });
+ const advance=(target,phase)=>{
+  const elapsed=target-t;
+  if(lastAction!==null){
+   const uncovered=Math.max(0,target-Math.max(t,controlEnd));
+   gap+=uncovered;
+   controlled+=elapsed-uncovered;
+   if(uncovered>epsilon)gapReasons.push({duration:uncovered,cause:controlBroken?'控制被伤害提前打破':controlEnd<=0?'此前没有有效控制':'控制已结束',phase});
+  }
+  const before=energy;
+  energy=energyAfter(energy,t,target,max,regen,adrenalineUntil);
+  t=target;
+  if(premedPending&&t>=premedUntil){cp=Math.max(0,cp-premedPending);premedPending=0;}
+  return energy-before;
+ };
  const gapNote=()=>gapReasons.map(x=>`控制空档 ${fmt(x.duration)} 秒（${x.cause}，${x.phase}）`);
  for(let i=0;i<sequence.length;i++){
-  const entry=sequence[i], s=book[entry.id]; if(!s){stopped=true;break;} const startGap=gap; gapReasons=[]; let energyWait=0, energyShortage=false;
-  if(s.wait){ const d=Math.max(0,Number(entry.wait)||0), before=energy; advance(t+d,'主动等待期间'); rows.push({index:i,name:s.name,time:t,before,after:energy,cp,controlEnd,gap,notes:[`等待 ${d} 秒`,...gapNote()],wait:true,controlGap:gap-startGap,gapReasons}); continue; }
-  if(s.leave){inCombat=false;rows.push({index:i,name:s.name,time:t,before:energy,after:energy,cp,controlEnd,gap,notes:['手动假设已脱战；并不保证游戏内可以脱战'],wait:true});continue;}
-  let planned=entry.offGcd?t:Math.max(t,ready), since=energy; let recovered=advance(planned,'等待公共冷却期间');
+  const entry=sequence[i], s=book[entry.id]; if(!s){stopped=true;break;}
+  const startTime=t, startGap=gap, combatAvoidedBefore=combatAvoided;
+  gapReasons=[];
+  let energyWait=0, energyShortage=false, autoAttackChangedAt=null, combatChangedAt=null;
+  const appendRow=(before,notes,extra)=>rows.push({
+   index:i,id:entry.id,name:s.name,startTime,time:t,before,after:energy,cp,controlEnd,gap,
+   notes:[...notes,...gapNote()],energyShortage,energyWait,controlGap:gap-startGap,gapReasons,
+   autoAttackChangedAt,combatChangedAt,combatAvoidedBefore,...status(),...extra
+  });
+  const setAutoAttack=active=>{
+   if(autoAttacking!==active){autoAttacking=active;autoAttackChangedAt=t;}
+  };
+  if(s.wait){
+   const seconds=Number(entry.wait);
+   const duration=Number.isFinite(seconds)?Math.max(0,seconds):0;
+   const before=energy;
+   const evading=entry.id==='evade';
+   const notes=[`${s.name} ${fmt(duration)} 秒`];
+   if(evading||entry.id==='stop')setAutoAttack(false);
+   if(evading&&inCombat){
+    combatAvoided=Math.min(combatExitDelay,combatAvoided+duration);
+    if(combatAvoided>=combatExitDelay-epsilon){
+     inCombat=false;
+     combatChangedAt=Math.min(t+duration,t+combatExitDelay-combatAvoidedBefore);
+     combatAvoided=combatExitDelay;
+     notes.push(`于 ${fmt(combatChangedAt)} 秒脱战`);
+    }else notes.push(`还需连续避战 ${fmt(combatExitDelay-combatAvoided)} 秒脱战`);
+   }else if(inCombat&&duration>0)combatAvoided=0;
+   const phase=entry.id==='stop'?'停止自动攻击期间':evading?'避战期间':'主动等待期间';
+   advance(t+duration,phase);
+   appendRow(before,notes,{wait:true});
+   continue;
+  }
+  if(s.leave){
+   if(inCombat)combatChangedAt=t;
+   inCombat=false;
+   combatAvoided=0;
+   setAutoAttack(false);
+   appendRow(energy,['手动假设已脱战'],{wait:true});
+   continue;
+  }
+  if(entry.id==='stealth'){
+   const errors=[];
+   if(inCombat)errors.push('需要脱战才能进入潜行');
+   if(!stealth&&stealthReadyAt>t+epsilon)errors.push(`潜行冷却中，还需 ${fmt(stealthReadyAt-t)} 秒`);
+   if(errors.length){
+    appendRow(energy,errors,{error:true});
+    stopped=true;
+    break;
+   }
+   stealth=true;
+   appendRow(energy,['进入潜行'],{wait:true});
+   continue;
+  }
+  const planned=entry.offGcd?t:Math.max(t,ready);
+  if(inCombat&&planned>t)combatAvoided=0;
+  let recovered=advance(planned,'等待公共冷却期间');
   let costInfo=skillCost(entry.id,cfg,book,energy,inCombat), cost=costInfo.cost;
   const errors=[],notes=[];
-  if(energy+1e-8<cost){ energyShortage=true;
+  if(energy+epsilon<cost){ energyShortage=true;
    const fullCost=skillCost(entry.id,cfg,book,max,inCombat).cost;
-   if(cfg.autoWait && regen>0 && fullCost<=max){const target=cost<=max?cost:max;const needed=target-energy, boostedWindow=Math.max(0,adrenalineUntil-t), boostedGain=2*regen*boostedWindow;const delay=needed<=boostedGain?needed/(2*regen):boostedWindow+(needed-boostedGain)/regen;energyWait=delay;totalEnergyWait+=delay;recovered+=advance(t+delay,'能量不足，等待回能期间');costInfo=skillCost(entry.id,cfg,book,energy,inCombat);cost=costInfo.cost;notes.push(`能量不足，等待 ${fmt(delay)} 秒`);} else errors.push(`能量不足：需要 ${fmt(cost)}，当前 ${fmt(energy)}`);
+   if(cfg.autoWait && regen>0 && fullCost<=max){
+    const delay=timeToEnergy(Math.min(max,cost));
+    energyWait=delay;
+    totalEnergyWait+=delay;
+    if(inCombat&&delay>0)combatAvoided=0;
+    recovered+=advance(t+delay,'能量不足，等待回能期间');
+    costInfo=skillCost(entry.id,cfg,book,energy,inCombat);
+    cost=costInfo.cost;
+    notes.push(`能量不足，等待 ${fmt(delay)} 秒`);
+   }else errors.push(`能量不足：需要 ${fmt(cost)}，当前 ${fmt(energy)}`);
   }
-  if((cooldowns[entry.id]||0)>t+1e-8) errors.push(`冷却中，还需 ${fmt(cooldowns[entry.id]-t)} 秒`);
+  if((cooldowns[entry.id]||0)>t+epsilon) errors.push(`冷却中，还需 ${fmt(cooldowns[entry.id]-t)} 秒`);
   if(s.finish && cp<1) errors.push('需要至少 1 个连击点');
   if(s.stealth && !stealth && !(t<ghostUntil && (entry.id==='ambush'||entry.id==='garrote'))) errors.push('需要潜行或鬼魅攻击的有效窗口');
   if(cfg.enforceTalents && entry.id==='premed'&&!cfg.premedTalent) errors.push('需要预谋天赋');
@@ -73,12 +179,12 @@ function simulate(sequence, cfg, book=skills, options={}) {
   if(entry.id==='mutilate'&&!cfg.mutilate) errors.push('需要毁伤天赋');
   if(entry.id==='adrenaline'&&!cfg.adrenaline) errors.push('需要冲动天赋');
   if(entry.id==='coldblood'&&!cfg.coldblood) errors.push('需要冷血天赋');
-  if(errors.length){rows.push({index:i,name:s.name,time:t,before:energy,after:energy,cp,controlEnd,gap,notes:[...errors,...gapNote()],error:true,energyShortage,energyWait,controlGap:gap-startGap,gapReasons}); stopped=true;break;}
-  const before=energy, oldCp=cp, previousEnd=controlEnd;
+  if(errors.length){appendRow(energy,errors,{error:true});stopped=true;break;}
+  const before=energy, oldCp=cp;
   let comboOverflow=0;const addCombo=amount=>{const total=cp+amount;comboOverflow+=Math.max(0,total-5);cp=Math.min(5,total);};
   if(s.breaks && controlType==='incap' && t<controlEnd){notes.push('伤害可能提前打破当前控制'); if(activeDr && dr[activeDr]) dr[activeDr].resetAt=t+cfg.drReset; controlEnd=t;controlBroken=true;}
   const gain=Number(s.gain)+(entry.id==='strike'?3*Number(cfg.flashRank||0):0);
-  energy=Math.min(max,energy-cost+gain);
+  energy=Math.min(max,Math.max(0,energy-cost+gain));
   if(s.finish) cp=0; else addCombo(Number(s.cp));
   const initiative=cfg.initiativeRank===undefined?(cfg.premeditation?3:0):Number(cfg.initiativeRank);
   if(['cheap','ambush','garrote'].includes(entry.id)&&initiative){const chance=[0,33,67,100][initiative];const hit=roll(chance,'random','先发制人');if(hit)addCombo(1);notes.push(`先发制人 ${chance}%：${hit?'触发 +1 星':'未触发'}`);}
@@ -126,18 +232,31 @@ function simulate(sequence, cfg, book=skills, options={}) {
    if(cfg.dr && s.dr){let state=dr[s.dr]||{count:0,resetAt:0}; if(t>=state.resetAt && !(activeDr===s.dr && t<controlEnd)) state.count=0; let factor=[1,cfg.drSecond/100,cfg.drThird/100,0][Math.min(3,state.count)]; duration*=factor; state.count++; dr[s.dr]=state; notes.push(`递减 ${fmt(factor*100)}%（${({stun:'昏迷组',incap:'瘫痪组',blind:'致盲组'})[s.dr]||s.dr}）`);}
    if(duration>0){if(t<controlEnd){notes.push(`覆盖剩余 ${fmt(controlEnd-t)} 秒控制`); if(activeDr && dr[activeDr] && activeDr!==s.dr)dr[activeDr].resetAt=t+cfg.drReset;} controlEnd=t+duration;controlBroken=false;controlType=s.type; activeDr=s.dr||''; if(cfg.dr && activeDr)dr[activeDr].resetAt=controlEnd+cfg.drReset; notes.push(`控制 ${fmt(duration)} 秒`);} else notes.push('控制免疫，未覆盖原有控制');
   }}
-  if(s.vanish) stealth=true; else if(!s.self&&entry.id!=='wait') {if(s.stealth && t<ghostUntil) ghostUntil=-1; stealth=false;}
+  if(s.vanish) stealth=true;
+  else if(!s.self){
+   if(s.stealth&&t<ghostUntil)ghostUntil=-1;
+   if(stealth)stealthReadyAt=t+stealthCooldown;
+   stealth=false;
+  }
   if(entry.id==='ghost') ghostUntil=t+7;
   if(comboOverflow)notes.push(`连击点溢出 ${comboOverflow} 点（超过 5 点上限）`);
   if(gain) notes.push(`技能恢复 ${gain} 能量`);
   if(['cheap','ambush','garrote','expose'].includes(entry.id)||costInfo.passive) notes.push(`消耗 ${fmt(costInfo.base)}${costInfo.talent?` − ${entry.id==='expose'?'强化破甲':['cheap','garrote'].includes(entry.id)?'卑鄙':'天赋'} ${fmt(costInfo.talent)}`:''}${costInfo.passive?` − 蓄势待发 ${fmt(costInfo.passive)}`:''} = ${fmt(cost)}`);
   if(['cheap','ambush','garrote'].includes(entry.id)&&!costInfo.passive)notes.push(`蓄势待发未生效（${!cfg.prepared?'未启用':inCombat?'战斗中':'能量未满'}）`);
   if(recovered>0)notes.push(`等待回能 ${fmt(recovered)}`);
-  notes.push(...gapNote());
-  cooldowns[entry.id]=t+Math.max(0,Number(s.cd)-(entry.id==='strike'?0.4*Number(cfg.flashRank||0):['vanish','blind'].includes(entry.id)?45*Number(cfg.elusivenessRank||0):0)); if(!entry.offGcd)ready=t+gcd; if(!s.self)lastAction=t; if(!s.vanish&&!s.self)inCombat=true;
-  rows.push({index:i,name:s.name,time:t,before,after:energy,cp,cpBefore:oldCp,controlEnd,gap,notes,cost,comboOverflow,energyShortage,energyWait,controlGap:gap-startGap,gapReasons,critOutcome});
+  cooldowns[entry.id]=t+Math.max(0,Number(s.cd)-(entry.id==='strike'?0.4*Number(cfg.flashRank||0):['vanish','blind'].includes(entry.id)?45*Number(cfg.elusivenessRank||0):0));
+  if(!entry.offGcd)ready=t+gcd;
+  if(!s.self)lastAction=t;
+  if(!s.vanish&&!s.self){
+   if(!inCombat)combatChangedAt=t;
+   inCombat=true;
+   combatAvoided=0;
+  }
+  if(s.vanish||entry.id==='gouge'||entry.id==='blind')setAutoAttack(false);
+  else if(!s.self&&entry.id!=='slice')setAutoAttack(true);
+  appendRow(before,notes,{cpBefore:oldCp,cost,comboOverflow,critOutcome});
  }
- return {rows,stopped,gap,controlled:controlled+Math.max(0,controlEnd-t),energyWait:totalEnergyWait,time:t,energy,cp,controlEnd};
+ return {rows,stopped,gap,controlled:controlled+Math.max(0,controlEnd-t),energyWait:totalEnergyWait,time:t,energy,cp,controlEnd,...status()};
 }
 function fmt(n){return (Math.round(n*100)/100).toString();}
-if(typeof module!=='undefined')module.exports={skills,simulate,fmt,skillCost,meleeCritChance};
+if(typeof module!=='undefined')module.exports={skills,simulate,fmt,skillCost,meleeCritChance,energyAfter};
