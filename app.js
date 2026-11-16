@@ -47,23 +47,27 @@ function drawPalette(result){
   const unlearned=talentKey&&(!requiresTree||cfg.enforceTalents)&&!cfg[talentKey];
   const cooldown=result.cooldownRemaining?.[id]||0;
   const row=simulate([...seq,draftEntry(id)],cfg,book).rows.at(-1);
-  let label='前序步骤中断',fit='blocked',cost='—';
+  let label='前序步骤中断',fit='blocked',cost='—',reason='前序中断';
   if(row?.index===seq.length){
    if(row.error){
-    label=`当前条件不足 · ${row.notes[0]}`;
+    label=`当前条件不足 · ${row.notes.join('；')}`;
+    const errors=row.notes.join('；');
+    reason=errors.includes('需要')&&errors.includes('天赋')?'未学天赋':errors.includes('需要潜行')?'需要潜行':/(^|；)冷却中/.test(errors)?'冷却中':errors.includes('需要至少 1 个连击点')?'缺连击点':errors.includes('能量不足')?'能量不足':'条件不足';
     if(row.energyShortage)fit='energy';
    }else{
+    reason='';
     cost=s.item?`+${fmt(s.gain)}`:fmt(row.cost);
     fit=row.energyWait>0?'energy':'ready';
     label=s.item?`恢复最多 ${fmt(s.gain)} 能量`:`预计消耗 ${cost} 能量${fit==='energy'?`，需额外回能 ${fmt(row.energyWait)} 秒`:''}`;
    }
   }
   if(s.item&&cost==='—')cost=`+${fmt(s.gain)}`;
-  if(unlearned){label='未学习对应天赋';fit='unlearned';}
+  if(unlearned){label='未学习对应天赋';fit='unlearned';reason='未学天赋';}
   if(cooldown>0)label+=` · 冷却 ${fmt(cooldown)} 秒`;
   const hint=escapeHtml(`${s.name}：${label}`);
   const icon=skillIcons[id];
-  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}" ${unlearned?'disabled':''}><span class="skill-picture">${icon?`<img src="${icon}" alt="" loading="lazy">`:''}${unlearned?'<span class="skill-cooldown">未学</span>':cooldown>0?`<span class="skill-cooldown">${fmt(cooldown)}秒</span>`:''}<span class="skill-cost">${cost}</span></span><span class="skill-name">${escapeHtml(s.paletteName||s.name)}</span></button>`;
+  const overlay=reason==='冷却中'&&cooldown>0?`${fmt(cooldown)}秒`:reason||(cooldown>0?`${fmt(cooldown)}秒`:'');
+  return `<button type="button" class="skill${cost==='—'?' skill-na':''}" data-add="${id}" data-fit="${fit}" title="${hint}" aria-label="${hint}" ${reason?'disabled':''}><span class="skill-picture">${icon?`<img src="${icon}" alt="" loading="lazy">`:''}${overlay?`<span class="skill-cooldown${reason&&reason!=='冷却中'?' skill-reason':''}">${escapeHtml(overlay)}</span>`:''}<span class="skill-cost">${cost}</span></span><span class="skill-name">${escapeHtml(s.paletteName||s.name)}</span></button>`;
  }).join('');
 }
 function updateSkillCostHint(){const id=$('#editSkill').value,current=state.book[id].cost,standard=initial.book[id].cost;$('#editBaseNote').textContent=Number(current)!==Number(standard)?`当前基础消耗 ${fmt(current)}，默认 ${fmt(standard)}；天赋和被动会继续减免。`:'填写未减免的基础消耗；天赋和被动会另行计算。';}
@@ -244,8 +248,13 @@ function drawDraftEnergy(result){
  const poised=state.cfg.prepared&&!inCombat&&timeToFull===0?' · 蓄势待发':'';
  $('#draftCombat').textContent=`${combat}${stealthStatus}${poised}`;
  const stealthButton=$('[data-add="stealth"]');
- stealthButton.title=inCombat?'潜行需要先脱战':stealthCooldownRemaining>0?`潜行冷却剩余 ${fmt(stealthCooldownRemaining)} 秒`:'可进入潜行';
- stealthButton.querySelector('.draft-stealth-cd').textContent=stealthCooldownRemaining>0?`${fmt(stealthCooldownRemaining)}秒`:'';
+ const stealthReason=result.stopped?'前序步骤中断':stealth?'已经潜行':inCombat?'潜行需要先脱战':stealthCooldownRemaining>0?`潜行冷却剩余 ${fmt(stealthCooldownRemaining)} 秒`:'';
+ stealthButton.disabled=!!stealthReason;
+ stealthButton.style.opacity=stealthReason?'0.6':'';
+ stealthButton.style.cursor=stealthReason?'not-allowed':'';
+ stealthButton.title=stealthReason||'可进入潜行';
+ stealthButton.setAttribute('aria-label',`潜行：${stealthReason||'可进入潜行'}`);
+ stealthButton.querySelector('.draft-stealth-cd').textContent=result.stopped?'前序中断':stealth?'已潜行':inCombat?'需脱战':stealthCooldownRemaining>0?`冷却 ${fmt(stealthCooldownRemaining)}秒`:'';
  const last=state.sequence.at(-1),seconds=draftActions[last?.id]?.seconds;
  $('#draftTiming').hidden=seconds===undefined;
  const swingInfo=$('#draftSwingInfo');
@@ -284,11 +293,16 @@ function drawNearbyResult(v,damage){
   panel.innerHTML=`<div class="live-title"><strong>第 ${last.index+1} 步 · ${escapeHtml(last.name)} <small>${fmt(last.time)}秒${blocked}</small></strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div>${comboPointBadge(last)}${autoWaitCard(last)}${stageMetrics(last,byDamage.get(last.index))}<div class="stage-flags">${stageFlags(last,2)}</div>`;
  }
  sequenceRows=new Map(v.rows.map(row=>[row.index,row]));sequenceDamageRows=byDamage;
- $$('#sequence .auto-wait-card').forEach(el=>el.remove());
+ $$('#sequence .seq-auto-wait, #sequence .seq-auto-wait-arrow').forEach(el=>el.remove());
  $$('#sequence [data-step-preview]').forEach(el=>{
   const row=sequenceRows.get(Number(el.dataset.stepPreview)),dmg=row&&byDamage.get(row.index),card=el.closest('.seqrow');
   card.classList.toggle('seq-blocked',!row||!!row.error);
-  if(row?.autoEnergyWait)card.insertAdjacentHTML('beforebegin',autoWaitCard(row));
+  if(row?.autoEnergyWait?.seconds>0){
+   const wait=row.autoEnergyWait;
+   const attack=wait.autoAttacking?(state.damage.weapon.enabled?'继续平砍':'平砍中（伤害计算关闭）'):'已停手';
+   const gap=wait.controlGap>0?`控制空档 ${fmt(wait.controlGap)} 秒`:'无新增控制空档';
+   card.insertAdjacentHTML('beforebegin',`<div class="auto-wait-card seq-auto-wait" role="note" aria-label="自动等待回能 ${fmt(wait.seconds)} 秒"><strong>自动等待回能</strong><b class="seq-wait-duration">${fmt(wait.seconds)} 秒</b><span>${fmt(wait.startTime)}–${fmt(wait.endTime)} 秒</span><span>能量 ${fmt(wait.startEnergy)} → ${fmt(wait.endEnergy)}（+${fmt(wait.energyGained)}）</span><span>${attack}</span><span class="${wait.controlGap>0?'auto-wait-gap':''}">${gap}</span></div><span class="seq-arrow seq-auto-wait-arrow" aria-hidden="true">→</span>`);
+  }
   const overflow=row?.notes.find(note=>/连击点溢出/.test(note));
   const risk=row?.notes.find(note=>/控制空档|能量不足/.test(note));
   if(!row){delete card.dataset.points;el.innerHTML='<span class="note-warning">前序中断，尚未执行</span>';return;}
