@@ -227,3 +227,11 @@
   .talent-lab {grid-template-columns: minmax(0, 1fr)}
   .talent-compare-actions button {flex: 1 1 auto}
 }
+.talent-library{margin:16px 0;padding:14px;border:1px solid #665839;border-radius:5px;background:#20271f}
+.talent-library>strong{color:#f1d18e}
+.talent-library-controls{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin-top:10px}
+.talent-library-controls label{display:grid;gap:4px;min-width:160px;flex:1;color:#b7c2b4;font-size:12px}
+.talent-library-controls input,.talent-library-controls select{width:100%;min-height:40px;background:#0d1312;border:1px solid #405046;border-radius:3px;color:#f1f0e6;padding:6px 8px}
+.talent-library-controls button{min-height:40px}
+.talent-library p{margin:8px 0 0}
+@media(max-width:600px){.talent-library-controls label{min-width:100%;}.talent-library-controls button{flex:1;min-height:44px}}

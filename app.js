@@ -336,11 +336,71 @@ function activeTalentBuilds(){
  const lab=state.talentLab;
  return lab.slot==='A'?[state.talents,lab.other]:[lab.other,state.talents];
 }
+function talentBuildSnapshot(){return {talents:structuredClone(state.talents),level:state.talentLab.level,gift:state.talentLab.gift};}
+function talentBuilds(){return (state.savedTalentBuilds||[]).filter(b=>b&&typeof b.id==='string'&&typeof b.name==='string'&&Number.isInteger(b.level)&&b.level>=1&&b.level<=60&&Number.isInteger(b.gift)&&b.gift>=0&&b.gift<=5&&!validateTalents(b.talents)&&totalTalentPoints(b.talents)<=talentPointBudget(b.level,b.gift));}
+function talentBuildDirty(){return JSON.stringify(talentBuildSnapshot())!==JSON.stringify(state.talentBuildBaseline);}
+function stashTalentBuildSlot(){state.talentBuildSlots??={};state.talentBuildSlots[state.talentLab.slot]={selected:state.selectedTalentBuild||'',baseline:structuredClone(state.talentBuildBaseline)};}
+function restoreTalentBuildSlot(slot){const meta=state.talentBuildSlots?.[slot];state.selectedTalentBuild=meta?.selected||'';state.talentBuildBaseline=meta?.baseline?structuredClone(meta.baseline):talentBuildSnapshot();const input=$('#talentBuildName');if(input)input.value=talentBuilds().find(b=>b.id===state.selectedTalentBuild)?.name||'';}
+function drawTalentBuildLibrary(){
+ const select=$('#talentBuildSelect');if(!select)return;
+ const builds=talentBuilds();
+ if(!builds.some(b=>b.id===state.selectedTalentBuild))state.selectedTalentBuild='';
+ select.innerHTML='<option value="">当前未命名方案</option>'+builds.map(b=>`<option value="${escapeHtml(b.id)}">${escapeHtml(b.name)}</option>`).join('');
+ select.value=state.selectedTalentBuild||'';
+ $('#talentBuildUpdate').disabled=!state.selectedTalentBuild;
+ $('#talentBuildDelete').disabled=!state.selectedTalentBuild;
+ $('#talentBuildRestore').disabled=!state.selectedTalentBuild;
+ const msg=$('#talentBuildMessage');
+ msg.textContent=(talentBuildDirty()?'当前加点已修改，未保存。':state.selectedTalentBuild?'当前加点与已保存方案一致。':'当前未关联已保存方案。')+(msg.dataset.notice?' '+msg.dataset.notice:'')+' 方案保存在当前浏览器，不同设备不共享。';
+}
+function setupTalentBuildLibrary(){
+ if(!Array.isArray(state.savedTalentBuilds))state.savedTalentBuilds=[];
+ if(!state.talentBuildBaseline)state.talentBuildBaseline=talentBuildSnapshot();
+ $('#talentStatus').insertAdjacentHTML('beforebegin',`<section class="talent-library" aria-label="已保存的天赋方案"><strong>我的天赋方案</strong><div class="talent-library-controls"><label>选择并切换<select id="talentBuildSelect"></select></label><label>方案名称<input id="talentBuildName" maxlength="40" placeholder="输入天赋名称"></label><button type="button" id="talentBuildSave" class="quiet">另存方案</button><button type="button" id="talentBuildUpdate" class="quiet">更新当前</button><button type="button" id="talentBuildRestore" class="quiet">恢复已保存</button><button type="button" id="talentBuildDelete" class="quiet">删除</button></div><p id="talentBuildMessage" class="small" role="status"></p></section>`);
+ const select=$('#talentBuildSelect'),input=$('#talentBuildName'),message=$('#talentBuildMessage');
+ const selected=talentBuilds().find(b=>b.id===state.selectedTalentBuild);if(selected)input.value=selected.name;
+ const notice=text=>{message.dataset.notice=text;drawTalentBuildLibrary();};
+ const loadBuild=id=>{
+  const build=talentBuilds().find(b=>b.id===id);
+  if(!build){select.value=state.selectedTalentBuild||'';return;}
+  if(talentBuildDirty()&&!confirm('当前天赋有未保存的修改，切换会替换当前加点。确定切换吗？')){select.value=state.selectedTalentBuild||'';return;}
+  const before=structuredClone({talents:state.talents,lab:state.talentLab,cfg:state.cfg,applied:state.talentsApplied,selected:state.selectedTalentBuild,baseline:state.talentBuildBaseline,name:input.value});
+  state.talents=structuredClone(build.talents);state.talentLab.level=build.level;state.talentLab.gift=build.gift;
+  state.selectedTalentBuild=id;state.talentBuildBaseline=talentBuildSnapshot();input.value=build.name;message.dataset.notice='';
+  closeTalentDetail();
+  if(!talentApply()){state.talents=before.talents;state.talentLab=before.lab;state.cfg=before.cfg;state.talentsApplied=before.applied;state.selectedTalentBuild=before.selected;state.talentBuildBaseline=before.baseline;input.value=before.name;syncConfig();drawTalents();drawResult();notice('浏览器存储失败，切换未保存。');}
+ };
+ select.onchange=()=>loadBuild(select.value);
+ $('#talentBuildRestore').onclick=()=>loadBuild(state.selectedTalentBuild);
+ $('#talentBuildSave').onclick=()=>{
+  const name=input.value.trim();if(!name){notice('请输入方案名称。');return;}
+  if(talentBuilds().some(b=>b.name===name)){notice('名称已存在，请更换名称或更新当前方案。');return;}
+  const previous=structuredClone({builds:state.savedTalentBuilds,selected:state.selectedTalentBuild,baseline:state.talentBuildBaseline});
+  const build={id:'talent-'+Date.now()+'-'+Math.random().toString(36).slice(2,8),name,...talentBuildSnapshot()};
+  state.savedTalentBuilds.push(build);state.selectedTalentBuild=build.id;state.talentBuildBaseline=talentBuildSnapshot();
+  if(!save()){state.savedTalentBuilds=previous.builds;state.selectedTalentBuild=previous.selected;state.talentBuildBaseline=previous.baseline;notice('保存失败，请检查浏览器存储空间或权限。');return;}notice('方案已保存。');
+ };
+ $('#talentBuildUpdate').onclick=()=>{
+  const build=talentBuilds().find(b=>b.id===state.selectedTalentBuild),name=input.value.trim();if(!build)return;
+  if(!name){notice('请输入方案名称。');return;}
+  if(talentBuilds().some(b=>b.id!==build.id&&b.name===name)){notice('名称已存在，请更换名称。');return;}
+  const previous=structuredClone({builds:state.savedTalentBuilds,baseline:state.talentBuildBaseline});
+  Object.assign(build,{name,...talentBuildSnapshot()});state.talentBuildBaseline=talentBuildSnapshot();
+  if(!save()){state.savedTalentBuilds=previous.builds;state.talentBuildBaseline=previous.baseline;notice('保存失败，请检查浏览器存储空间或权限。');return;}notice('方案已更新。');
+ };
+ $('#talentBuildDelete').onclick=()=>{
+  const build=talentBuilds().find(b=>b.id===state.selectedTalentBuild);if(!build||!confirm(`删除天赋方案“${build.name}”？`))return;
+  const previous=structuredClone({builds:state.savedTalentBuilds,selected:state.selectedTalentBuild,baseline:state.talentBuildBaseline});
+  state.savedTalentBuilds=state.savedTalentBuilds.filter(b=>b.id!==build.id);state.selectedTalentBuild='';state.talentBuildBaseline=talentBuildSnapshot();
+  if(!save()){state.savedTalentBuilds=previous.builds;state.selectedTalentBuild=previous.selected;state.talentBuildBaseline=previous.baseline;notice('删除失败，请检查浏览器存储空间或权限。');return;}input.value='';notice('方案已删除。');
+ };
+}
 function setupTalentLab(){
  const saved=state.talentLab||{};
  const other=validateTalents(saved.other)?null:saved.other;
  state.talentLab={level:Number(saved.level)||60,gift:Math.max(0,Math.min(5,Math.round(Number(saved.gift)||0))),
   slot:other&&saved.slot==='B'?'B':'A',other,filter:['a','b','both'].includes(saved.filter)?saved.filter:'both'};
+ setupTalentBuildLibrary();
  const status=$('#talentStatus');
  status.insertAdjacentHTML('beforebegin',`<section class="talent-lab" aria-label="天赋方案">
   <div class="talent-level-controls">
@@ -385,15 +445,19 @@ function setupTalentLab(){
  });
  $('#talentCompareStart').addEventListener('click',()=>{
   const lab=state.talentLab;
+  stashTalentBuildSlot();
   lab.other=state.talents.map(branch=>branch.slice());
   lab.slot='B';
+  if(state.talentBuildSlots)delete state.talentBuildSlots.B;restoreTalentBuildSlot('B');
   drawTalents();save();
   $('[data-talent-slot="B"]').focus({preventScroll:true});
  });
  $('#talentCompareStop').addEventListener('click',()=>{
   const lab=state.talentLab;
   const retained=lab.slot;
+  stashTalentBuildSlot();if(retained==='B')state.talentBuildSlots.A=state.talentBuildSlots.B;
   lab.other=null;lab.slot='A';
+  restoreTalentBuildSlot('A');
   drawTalents();save();
   status.textContent+=` · 已保留方案 ${retained}`;
   $('#talentCompareStart').focus({preventScroll:true});
@@ -409,8 +473,9 @@ function setupTalentLab(){
   const {talentSlot,talentFilter,talentDiff}=button.dataset;
   if(talentSlot&&lab.slot!==talentSlot){
    closeTalentDetail();
+   stashTalentBuildSlot();
    [state.talents,lab.other]=[lab.other,state.talents];
-   lab.slot=talentSlot;talentApply();
+   lab.slot=talentSlot;restoreTalentBuildSlot(talentSlot);talentApply();
   }else if(talentFilter){
    lab.filter=talentFilter;renderTalentLab();save();
   }else if(talentDiff){
@@ -511,6 +576,7 @@ function drawTalents(){
  updateTalentTabs();
  if(selectedTalent&&!$('#talentDetail').hidden)showTalentDetail(...selectedTalent,$('#talentDetail').dataset.mode);
  $('#talentStatus').textContent=`${totals.join(' / ')}${state.talentsApplied?' · 已同步推演':''}${lab.other?` · 当前方案 ${lab.slot}`:''}`;
+ drawTalentBuildLibrary();
 }
 function talentAnchor(branch,index){
  return talentTree.querySelector(`[data-talent-detail="${branch},${index}"]`);
@@ -565,7 +631,7 @@ function closeTalentDetail(){
 function talentApply(){
  applyTalentConfig(state.talents,state.cfg);
  state.talentsApplied=true;
- syncConfig();drawTalents();drawResult();save();
+ syncConfig();drawTalents();drawResult();return save();
 }
 function changeTalentRank(branch,index,delta){
  const rank=state.talents[branch][index],talent=talentTrees[branch].talents[index],next=rank+delta;
@@ -663,6 +729,10 @@ function importTalents(source){
   if(source.includes('~')){
    const [a,b]=parseTalentComparison(source);
    lab.other=a;lab.slot='B';state.talents=b;
+   const blank={talents:blankTalents(),level:lab.level,gift:lab.gift};
+   state.talentBuildSlots={A:{selected:'',baseline:structuredClone(blank)}};
+   state.selectedTalentBuild='';state.talentBuildBaseline=blank;
+   $('#talentBuildName').value='';
   }else{
    state.talents=parseTalentLink(source);
   }
