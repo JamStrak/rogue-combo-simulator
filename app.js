@@ -4,7 +4,7 @@ let state;try{const old=JSON.parse(localStorage.getItem('shadow-calc-v1'));state
 const damageInitial=damageDefaults(),savedDamage=state.damage&&typeof state.damage==='object'?state.damage:{};
 // 示例双匕首来自无限服装备数据库；面板 AP 为可编辑的示例，不重复叠加装备属性。
 const referenceWeapon={enabled:true,attackPower:528,mainMin:55,mainMax:102,mainSpeed:1.9,offMin:37,offMax:69,offSpeed:1.3,offhandPenalty:0.5,strikeCoefficient:0.5};
-state.damage={...damageInitial,skillModel:'weapon',...savedDamage,weapon:{...referenceWeapon,...(savedDamage.weapon||{})},values:{...damageInitial.values,...(savedDamage.values||{})},bleeds:{garrote:{...damageInitial.bleeds.garrote,...(savedDamage.bleeds?.garrote||{})},rupture:{...damageInitial.bleeds.rupture,...(savedDamage.bleeds?.rupture||{})}}};
+state.damage={...damageInitial,skillModel:'weapon',bleedAttackPower:!state.damage,...savedDamage,weapon:{...referenceWeapon,...(savedDamage.weapon||{})},values:{...damageInitial.values,...(savedDamage.values||{})},bleeds:{garrote:{...damageInitial.bleeds.garrote,...(savedDamage.bleeds?.garrote||{})},rupture:{...damageInitial.bleeds.rupture,...(savedDamage.bleeds?.rupture||{})}}};
 for(const id of Object.keys(damageInitial.values))if(!Number.isFinite(Number(state.damage.values[id]))||Number(state.damage.values[id])<0||Number(state.damage.values[id])>1000000)state.damage.values[id]=damageInitial.values[id];
 for(const [key,min,max] of [['attackPower',0,10000],['mainMin',0,10000],['mainMax',0,10000],['mainSpeed',0.1,10],['offMin',0,10000],['offMax',0,10000],['offSpeed',0.1,10],['offhandPenalty',0,2],['strikeCoefficient',0,2]]){const value=Number(state.damage.weapon[key]);if(!Number.isFinite(value)||value<min||value>max)state.damage.weapon[key]=referenceWeapon[key];}
 state.damage.weapon.enabled=!!state.damage.weapon.enabled;
@@ -88,6 +88,7 @@ function renderNotes(notes,error=false){
 function syncDamageEditor(){
  const select=$('#damageSkill'),id=select.value,isBleed=id==='garrote'||id==='rupture',isRupture=id==='rupture',dot=state.damage.bleeds[id];
  $('#weaponEnabled').checked=state.damage.weapon.enabled;$('#damageModel').value=state.damage.skillModel;document.querySelectorAll('[data-weapon]').forEach(el=>el.value=state.damage.weapon[el.dataset.weapon]);$('#damageWindow').value=state.damage.burstWindow;$('#damageCrit').value=state.damage.critMultiplier;$('#damageBleedCrit').value=state.damage.bleedCritRate;$('#damageBleedMode').value=state.damage.bleedCritMode;
+ $('#damageBleedAp').checked=!!state.damage.bleedAttackPower;
  $('#damageWhiteMode').value=state.damage.whiteCritMode;
  $('#damageBleedSource').value=state.damage.bleedCritSource;
  $('#damageBleedRateLabel').hidden=state.damage.bleedCritSource!=='manual';
@@ -99,7 +100,7 @@ function syncDamageEditor(){
   $('#damageDurationText').textContent=isRupture?'割裂基础持续时间（秒）':'绞喉持续时间（秒）';
   $('#damageDuration').value=isRupture?dot.durationBase:dot.duration;$('#damageInterval').value=dot.interval;
   if(isRupture){$('#damageTickPer').value=dot.tickDamagePerCombo;$('#damageDurationPer').value=dot.durationPerCombo;}
-  $('#damageSkillHint').textContent=isRupture?'割裂每跳 = 基础伤害 + 每星增加 × 实际消耗星数；持续时间也按实际星数计算。':'绞喉每跳按输入值计算，首次跳伤在一个间隔后。';
+  $('#damageSkillHint').textContent=(isRupture?'割裂每跳 = 基础伤害 + 每星增加 × 实际消耗星数；持续时间也按实际星数计算。':'绞喉首次跳伤在一个间隔后。')+(state.damage.bleedAttackPower?' 已开启攻强加成估算。':' 当前未叠加攻强。');
  }else{
   $('#damageBase').value=state.damage.values[id];$('#damageBaseLabel').textContent=id==='eviscerate'?'刺骨每消耗 1 星的伤害':'普通命中伤害';
   $('#damageSkillHint').textContent=(state.damage.skillModel==='weapon'?'技能采用装备公式，此处数值仅在切换手动基准后生效。':'')+(id==='eviscerate'?'例如填写 100，消耗 5 星时按 500 点基础直接伤害计算。':'输入该技能一次普通命中的直接伤害；毁伤输入两手合计。');
@@ -119,12 +120,27 @@ function setupDamageEditor(){
  document.querySelectorAll('[data-weapon]').forEach(el=>el.addEventListener('input',e=>{if(e.target.value==='')return;const value=Number(e.target.value),min=Number(e.target.min),max=Number(e.target.max);if(Number.isFinite(value)&&value>=min&&value<=max){state.damage.weapon[e.target.dataset.weapon]=value;drawResult();save();}}));
  $('#weaponPreset').onclick=()=>{state.damage.weapon={...referenceWeapon};state.cfg.mainWeaponType=state.cfg.offWeaponType='dagger';syncDamageEditor();drawResult();save();};
  $('#damageBleedMode').onchange=e=>{state.damage.bleedCritMode=e.target.value;drawResult();save();};
+ $('#damageBleedAp').onchange=e=>{state.damage.bleedAttackPower=e.target.checked;syncDamageEditor();drawResult();save();};
+ $('#bleedPreset').onclick=()=>{state.damage.bleeds=structuredClone(damageDefaults().bleeds);state.damage.bleedAttackPower=true;syncDamageEditor();drawResult();save();};
  for(const [selector,key,min,max] of [['#damageWindow','burstWindow',0.1,120],['#damageCrit','critMultiplier',1,5],['#damageBleedCrit','bleedCritRate',0,100]])$(selector).addEventListener('input',e=>{if(e.target.value==='')return;const n=Number(e.target.value);if(Number.isFinite(n)&&n>=min&&n<=max){state.damage[key]=n;drawResult();save();}});
  $('#damageBase').addEventListener('input',e=>{if(e.target.value==='')return;const n=Number(e.target.value),id=$('#damageSkill').value;if(Number.isFinite(n)&&n>=0&&n<=1000000){if(id==='garrote')state.damage.bleeds.garrote.tickDamage=n;else if(id==='rupture')state.damage.bleeds.rupture.tickDamageBase=n;else state.damage.values[id]=n;drawResult();save();}});
  for(const [selector,property] of [['#damageDuration','duration'],['#damageInterval','interval'],['#damageDurationPer','durationPerCombo'],['#damageTickPer','tickDamagePerCombo']])$(selector).addEventListener('input',e=>{if(e.target.value==='')return;const id=$('#damageSkill').value,n=Number(e.target.value),key=property==='duration'&&id==='rupture'?'durationBase':property,min=property==='interval'||(property==='duration'&&id==='garrote')?0.1:0,max=property==='tickDamagePerCombo'?1000000:120;if(state.damage.bleeds[id]&&Number.isFinite(n)&&n>=min&&n<=max){state.damage.bleeds[id][key]=n;drawResult();save();}});
- $('#damageReset').onclick=()=>{state.damage={...damageDefaults(),skillModel:'weapon',whiteCritMode:'random',bleedCritMode:'random',bleedCritSource:'base',weapon:{...referenceWeapon}};state.cfg.mainWeaponType=state.cfg.offWeaponType='dagger';syncDamageEditor();drawResult();save();};
+ $('#damageReset').onclick=()=>{state.damage={...damageDefaults(),skillModel:'weapon',bleedAttackPower:true,whiteCritMode:'random',bleedCritMode:'random',bleedCritSource:'base',weapon:{...referenceWeapon}};state.cfg.mainWeaponType=state.cfg.offWeaponType='dagger';syncDamageEditor();drawResult();save();};
 }
 function damageLabel(row){return !row?'—':fmt(row.damage);}
+function attachWhiteHits(damage){
+ const hits=damage.events.filter(event=>event.type==='white');let position=0;
+ for(const row of damage.rows){
+  row.whiteHits=[];
+  while(position<hits.length&&hits[position].time<=row.time+1e-9)row.whiteHits.push(hits[position++]);
+ }
+ damage.whiteTailHits=hits.slice(position);
+}
+function whiteHitSummary(hits){
+ const hands=['main','off'].map(hand=>{const selected=hits.filter(hit=>hit.hand===hand);return `${hand==='main'?'主手':'副手'} ${selected.length} 次 / ${fmt(selected.reduce((total,hit)=>total+hit.damage,0))}`;});
+ return hands.join(' · ');
+}
+function whiteHitTimes(hits){return hits.length?hits.map(hit=>`${fmt(hit.time)}秒 ${hit.hand==='main'?'主手':'副手'} ${fmt(hit.damage)}${hit.crit===true?' 暴击':''}`).join('；'):'本阶段没有平砍命中';}
 function stageFlags(row,limit=Infinity){
  const notes=row.notes.flatMap(note=>note.split('；'));
  const flags=notes.filter(note=>row.error||/暴击 [\d.]+%：是(?!.*未触发)/.test(note)||/能量不足|可反制空档|控制空档|控制免疫|可能提前打破|连击点溢出/.test(note)||(!/未触发/.test(note)&&/暴击 [\d.]+%：是|(?:：|封印命运)触发|强化破甲：5 星返还/.test(note)));
@@ -134,10 +150,10 @@ function stageFlags(row,limit=Infinity){
 }
 function stageMetrics(row,dmg){
  const control=row.controlEnd>row.time?fmt(row.controlEnd-row.time)+'秒':'无';
- return `<div class="stage-primary"><div class="stage-damage"><span>本步伤害</span><b>${damageLabel(dmg)}</b></div><div class="stage-cumulative"><span>累计至此</span><b>${dmg?fmt(dmg.cumulative):'—'}</b></div></div><div class="stage-stats"><span>能量 <b class="stage-energy">${fmt(row.before)} → ${fmt(row.after)}</b></span><span>连击点 <b class="stage-stars" aria-label="${row.cp} 星">${'●'.repeat(row.cp)}<i>${'○'.repeat(5-row.cp)}</i></b></span><span>控制剩余 <b>${control}</b></span></div>`;
+ return `<div class="stage-primary"><div class="stage-damage"><span>本步伤害</span><b>${damageLabel(dmg)}</b></div><div class="stage-cumulative"><span>累计至此</span><b>${dmg?fmt(dmg.cumulative):'—'}</b></div></div><div class="stage-stats"><span>能量 <b class="stage-energy">${fmt(row.before)} → ${fmt(row.after)}</b></span><span>连击点 <b class="stage-stars" aria-label="${row.cp} 星">${'●'.repeat(row.cp)}<i>${'○'.repeat(5-row.cp)}</i></b></span><span>控制剩余 <b>${control}</b></span></div>${dmg?`<div class="stage-white">技能 ${fmt(dmg.directDamage)}${state.damage.weapon.enabled?` · 平砍 ${whiteHitSummary(dmg.whiteHits)}`:''} · 流血 ${fmt(dmg.bleedDamage)}</div>`:''}`;
 }
 function stageDetails(row,dmg){
- return `<details class="stage-details"><summary>展开详细分析</summary><div>${dmg?`本步伤害 = 技能 ${fmt(dmg.directDamage)} + 平砍 ${fmt(dmg.whiteDamage)} + 流血 ${fmt(dmg.bleedDamage)}；累计不含未来尾伤。<br>`:'未执行<br>'}${renderNotes(row.notes,row.error)}</div></details>`;
+ return `<details class="stage-details"><summary>展开详细分析</summary><div>${dmg?`本步伤害 = 技能 ${fmt(dmg.directDamage)} + 平砍 ${fmt(dmg.whiteDamage)} + 流血 ${fmt(dmg.bleedDamage)}；累计不含未来尾伤。<br>${state.damage.weapon.enabled?`平砍命中：${whiteHitTimes(dmg.whiteHits)}<br>`:''}`:'未执行<br>'}${renderNotes(row.notes,row.error)}</div></details>`;
 }
 function drawDraftEnergy(result){
  const {energy,gcdRemaining,energyAtGcd,timeToFull,inCombat,stealth,autoAttacking,combatRemaining,stealthCooldownRemaining}=result;
@@ -223,8 +239,10 @@ function drawGearOverview(){
  $('#gearSkillCrit').innerHTML=skillRates.map(([name,rate])=>`<span>${name} <b>${fmt(rate)}%</b></span>`).join('');
  $('#gearCritGuide').textContent=`通用暴击 ${fmt(critRate)}% · 主手白字 ${fmt(mainCrit)}% · 副手白字 ${fmt(offCrit)}%。基础值不含恶意、劈斩和技能专属天赋。`;
 }
-function drawResult(){drawGearOverview();const v=simulate(state.sequence,state.cfg,state.book);drawPalette(v);const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const damage=calculateDamage(state.sequence,v,state.cfg,state.damage),damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
-$('#damageMethod').textContent='平砍按武器速度和面板攻击强度估算，暴击按装备设置结算；敌对技能开启自动攻击，停砍、避战、消失、脱战、凿击和致盲会停手，之后敌对技能重新开始计时。末步控制期间的平砍单列，不随流血尾伤延长。刺击按副手武器和可调整倍率估算，是否额外受副手惩罚有待验证。技能按选定模式计算；忽略护甲、命中、躲闪、武器触发和毒药；流血跳伤仍可能提前打破控制但尚未模拟。计入刺击、伏击、鬼魅攻击、出血、毁伤、背刺、邪恶攻击、凿击、刺骨的直接伤害，及绞喉、割裂的逐跳流血。'+(state.damage.bleedCritMode==='random'?'流血每跳独立掷骰，同种子结果可复现，可重新掷骰。':'流血按暴击概率计算期望。')+'直接攻击有掷骰则沿用，否则按期望估算。相同流血重施覆盖旧效果；爆发窗口含起点、不含终点。平均值以推演结束和最后伤害时刻中较晚者为分母。未计毒药、武器触发及未自动套用的伤害天赋。';
+function drawResult(){drawGearOverview();const v=simulate(state.sequence,state.cfg,state.book);drawPalette(v);const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const damage=calculateDamage(state.sequence,v,state.cfg,state.damage);attachWhiteHits(damage);const damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
+if(v.rows.some(row=>!row.error&&row.id==='deathmark'))$('#damageSummary').insertAdjacentHTML('beforeend','<div class="white-tail"><span>死亡印记的伤害尚未计入总伤害</span></div>');
+if(state.damage.weapon.enabled&&damage.whiteTailHits.length)$('#damageSummary').insertAdjacentHTML('beforeend',`<div class="white-tail"><span>控制收尾平砍 · ${whiteHitSummary(damage.whiteTailHits)}</span><small>${whiteHitTimes(damage.whiteTailHits)}</small></div>`);
+$('#damageMethod').textContent='平砍按武器速度和面板攻击强度估算，暴击按装备设置结算；敌对技能开启自动攻击，停砍、避战、消失、脱战、凿击和致盲会停手，之后敌对技能重新开始计时。末步控制期间的平砍单列，不随流血尾伤延长。刺击按副手武器和可调整倍率估算，是否额外受副手惩罚有待验证。出血按假设在 15 秒内动态提升绞喉与割裂跳伤 15%，生效方式待实测；流血攻强加成可在设置中切换，系数来自社区假设。失败中断后控制剩余期间仍假设继续平砍。技能按选定模式计算；忽略护甲、命中、躲闪、武器触发和毒药；流血跳伤仍可能提前打破控制但尚未模拟。计入刺击、伏击、鬼魅攻击、出血、毁伤、背刺、邪恶攻击、凿击、刺骨的直接伤害，及绞喉、割裂的逐跳流血。'+(state.damage.bleedCritMode==='random'?'流血每跳独立掷骰，同种子结果可复现，可重新掷骰。':'流血按暴击概率计算期望。')+'直接攻击有掷骰则沿用，否则按期望估算。相同流血重施覆盖旧效果；爆发窗口含起点、不含终点。平均值以推演结束和最后伤害时刻中较晚者为分母。未计死亡印记伤害、毒药、武器触发、切割加速、毁伤对中毒目标的加成及未自动套用的伤害天赋。';
 const ticks=damage.events.filter(event=>event.type==='bleed');$('#bleedTimeline').innerHTML=ticks.length?`<p class="small">${state.damage.bleedCritMode==='random'?'逐跳独立判定暴击':'每跳显示含暴击概率的期望伤害'}；总计 ${ticks.length} 跳，列出前 ${Math.min(ticks.length,1000)} 跳。</p><div class="bleed-timeline">${ticks.slice(0,1000).map(event=>`<span>${fmt(event.time)} 秒 · ${state.book[event.id].name} <b${event.crit===true?' class="note-success"':''}>${fmt(event.damage)}${event.crit===true?' 暴击':event.crit===false?' 普通':' 期望'}</b></span>`).join('')}</div>`:'<p class="small">当前推演没有流血跳伤。</p>';
 $('#warnings').textContent=state.cfg.dr?'PvP 递减采用假设：同组第 2 / 3 次分别按设定比例，第 4 次免疫；重置从控制结束计时。':'PvP 递减当前关闭，控制时长可能高估。';$('#rows').innerHTML=v.rows.length?v.rows.map(x=>{const dmg=damageRows.get(x.index);return `${autoWaitCard(x)}<article class="stage-card${x.error?' error':''}"><div class="stage-head"><strong><span> ${String(x.index+1).padStart(2,'0')} </span>${escapeHtml(x.name)}</strong><time>${fmt(x.time)} 秒</time></div>${comboPointBadge(x)}${stageMetrics(x,dmg)}<div class="stage-flags">${stageFlags(x)}</div>${stageDetails(x,dmg)}</article>`}).join(''):'<div class="empty">添加技能后自动计算</div>';drawNearbyResult(v,damage);drawComboComparison();replayPlayer.update(state.sequence,v,damage,state.cfg);}
 function escapeHtml(value){return String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;');}

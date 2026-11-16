@@ -1,5 +1,5 @@
 // 这些数字是可修改的相对伤害基准，不是无限服实测技能伤害。
-function damageDefaults(){return {values:{ambush:300,ghost:120,hemo:110,mutilate:180,backstab:200,sinister:100,gouge:50,eviscerate:100},critMultiplier:2,burstWindow:5,bleedCritRate:20,bleedCritMode:'expected',weapon:{enabled:false,attackPower:0,mainMin:0,mainMax:0,mainSpeed:2.6,offMin:0,offMax:0,offSpeed:1.8,offhandPenalty:0.5,strikeCoefficient:0.5},bleeds:{garrote:{tickDamage:55,duration:18,interval:3},rupture:{tickDamageBase:0,tickDamagePerCombo:20,durationBase:6,durationPerCombo:2,interval:2}}};}
+function damageDefaults(){return {values:{ambush:300,ghost:120,hemo:110,mutilate:180,backstab:200,sinister:100,gouge:50,eviscerate:100},critMultiplier:2,burstWindow:5,bleedCritRate:20,bleedCritMode:'expected',weapon:{enabled:false,attackPower:0,mainMin:0,mainMax:0,mainSpeed:2.6,offMin:0,offMax:0,offSpeed:1.8,offhandPenalty:0.5,strikeCoefficient:0.5},bleeds:{garrote:{tickDamage:92,duration:18,interval:3},rupture:{tickDamageBase:35,tickDamagePerCombo:4.73,durationBase:6,durationPerCombo:2,interval:2}}};}
 const lethalitySkills=new Set(['sinister','gouge','backstab','mutilate','ghost','hemo']);
 const damageCritChance=typeof module!=='undefined'?require('./engine.js').meleeCritChance:(...args)=>meleeCritChance(...args);
 function weaponMetrics(settings,cfg){
@@ -11,9 +11,9 @@ function weaponMetrics(settings,cfg){
  const mainBase=weaponBase(weapon.mainMin,weapon.mainMax,mainSpeed);
  const offBase=weaponBase(weapon.offMin,weapon.offMax,offSpeed);
  const strikeBase=offBase*Math.max(0,number(weapon.strikeCoefficient,0.5));
- // 匕首归一化速度取 1.7 秒；此模式是可比较的怀旧系数估算，不是装备实测。
- const normalized=(min,max)=>weaponBase(min,max,1.7);
- const mainNormalized=normalized(weapon.mainMin,weapon.mainMax),offNormalized=normalized(weapon.offMin,weapon.offMax);
+ // 单手匕首归一化 1.7 秒，其他单手武器按 2.4 秒；缺省保持原匕首配置。
+ const normalized=(min,max,type)=>weaponBase(min,max,type&&type!=='dagger'?2.4:1.7);
+ const mainNormalized=normalized(weapon.mainMin,weapon.mainMax,cfg.mainWeaponType),offNormalized=normalized(weapon.offMin,weapon.offMax,cfg.offWeaponType);
  const offhandPenalty=Math.max(0,number(weapon.offhandPenalty,0.5));
  const critMultiplier=Math.max(1,number(settings.critMultiplier,2));
  const critRate=damageCritChance(cfg,'bleed');
@@ -35,14 +35,15 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
  const rows=[];
  const applications=[];
  for(const row of simulation.rows){
-  if(row.error)break;
+  if(row.error){rows.push({index:row.index,time:row.time,directDamage:0,bleedDamage:0,whiteDamage:0,damage:0,cumulative:0,critMode:'none'});break;}
   const id=sequence[row.index]?.id;
   let amount=id==='strike'?strikeBase:critSkills.has(id)?Math.max(0,number(values[id],0)):0;
   // 刺骨值按每个消耗的连击点计算；实际值来自该动作执行时的星数。
   const cp=Math.max(0,number(row.cpBefore,0));
   let mainShare=0.5;
   if(settings.skillModel==='weapon'){
-   const weaponAmounts={ambush:2.5*mainNormalized+290,backstab:1.5*mainNormalized+140,sinister:mainNormalized+68,ghost:1.8*mainNormalized,hemo:1.45*mainNormalized,gouge:75,mutilate:0.9*mainNormalized+79+(0.9*offNormalized+79)*offhandPenalty,eviscerate:cp>0?247+151*(cp-1)+ap*0.03*cp:0};
+   const dagger=!cfg.mainWeaponType||cfg.mainWeaponType==='dagger';
+   const weaponAmounts={ambush:2.5*mainNormalized+290,backstab:1.5*mainNormalized+140,sinister:mainNormalized+68,ghost:(dagger?1.8:1.25)*mainNormalized,hemo:(dagger?1.45:1)*mainNormalized,gouge:75,mutilate:0.9*mainNormalized+79+(0.9*offNormalized+79)*offhandPenalty,eviscerate:cp>0?247+151*(cp-1)+ap*0.03*cp:0};
    if(Object.hasOwn(weaponAmounts,id))amount=weaponAmounts[id];
    if(id==='mutilate'&&amount>0)mainShare=(0.9*mainNormalized+79)/amount;
   }else if(id==='eviscerate') amount*=cp;
@@ -81,17 +82,27 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
  const bleedMultiplier=1+(critMultiplier-1)*bleedCritRate;
  const bleeds={garrote:{...defaults.bleeds.garrote,...(settings.bleeds?.garrote||{})},rupture:{...defaults.bleeds.rupture,...(settings.bleeds?.rupture||{})}};
  const bleedEvents=[];
+ // 出血使目标在 15 秒内受到的绞喉和割裂伤害增加 15%；按跳伤时状态结算。
+ // 同时刻流血先于技能落地，刷新前一跳仍使用旧窗口。
+ const hemoTimes=simulation.rows.filter(row=>!row.error&&(row.id??sequence[row.index]?.id)==='hemo').map(row=>row.time);
  for(let i=0;i<applications.length;i++){
   const app=applications[i],spec=bleeds[app.id],next=applications.slice(i+1).find(a=>a.id===app.id);
   const interval=Math.max(0.1,number(spec.interval,app.id==='garrote'?3:2));
   const life=Math.min(3600,Math.max(0,app.id==='garrote'?number(spec.duration,18):number(spec.durationBase,6)+number(spec.durationPerCombo,2)*app.cp));
-  const base=Math.max(0,app.id==='garrote'?number(spec.tickDamage,55):number(spec.tickDamageBase,0)+number(spec.tickDamagePerCombo,20)*app.cp);
+  let base=Math.max(0,app.id==='garrote'?number(spec.tickDamage,92):number(spec.tickDamageBase,35)+number(spec.tickDamagePerCombo,4.73)*app.cp);
+  // 可选的社区怀旧公式估算，尚未由无限服实测验证；不修改用户保存的流血基础值。
+  if(settings.bleedAttackPower===true){
+   const rupturePerTick=[0,0.04/4,0.10/5,0.18/6,0.21/7,0.24/8];
+   const stars=Math.max(0,Math.min(5,Math.floor(app.cp)));
+   base+=ap*(app.id==='garrote'?0.03:rupturePerTick[stars]);
+  }
   const count=Math.floor(life/interval+1e-9);
   for(let j=1;j<=count;j++){
    const time=app.time+j*interval;
    // 同刻跳伤先于重施，旧效果在刷新时刻之后消失。
    if(next&&time>next.time+1e-9)break;
-   if(base>0)bleedEvents.push({time,type:'bleed',id:app.id,index:app.index,damage:base,crit:null});
+   const enhanced=hemoTimes.some(t=>time>t+1e-9&&time<t+15-1e-9);
+   if(base>0)bleedEvents.push({time,type:'bleed',id:app.id,index:app.index,damage:base*(enhanced?1.15:1),crit:null});
   }
  }
  bleedEvents.sort((a,b)=>a.time-b.time||a.index-b.index);
@@ -111,9 +122,9 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
   const timedPause=new Set(['stop','evade']);
   const pauses=new Set(['vanish','leave','gouge','blind',...timedPause]);
   const idOf=row=>row.id??sequence[row.index]?.id;
-  const actions=simulation.rows.filter(row=>!row.error);
+  const actions=simulation.rows;
   // 停手动作从区间开头生效，也要拦截恰好落在上一行结束时刻的白字。
-  const timedPauseTimes=new Set(actions.filter(row=>timedPause.has(idOf(row))).map(row=>row.startTime??row.time));
+  const timedPauseTimes=new Set(actions.filter(row=>!row.error&&timedPause.has(idOf(row))).map(row=>row.startTime??row.time));
   let nextMain=null,nextOff=null;
   const roll=settings.whiteCritMode==='random';
   const mainDamage=roll?metrics.mainNormal:metrics.mainExpected,offDamage=roll?metrics.offNormal:metrics.offExpected;
@@ -125,6 +136,8 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
   for(const row of actions){
    const id=idOf(row);
    const running=nextMain!==null;
+   // 失败的技能没有生效，但此前等待公共 CD 或能量的时间已经经过。
+   if(row.error){if(running)addSwingsThrough(row.time,row.index,true);break;}
    const active=row.autoAttacking??(!pauses.has(id)&&(running||Boolean(id&&!self.has(id))));
    if(running){
     const pauseTime=row.autoAttackChangedAt??(timedPause.has(id)?row.startTime:undefined);
@@ -136,7 +149,7 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
    else if(!running){const start=row.autoAttackChangedAt??row.time;nextMain=start+mainSpeed;nextOff=start+offSpeed;}
   }
   const last=actions.at(-1);
-  const controlEnd=Math.max(0,number(last?.controlEnd,0));
+  const controlEnd=Math.max(0,number(last?.controlEnd??(last?.error?actions.at(-2)?.controlEnd:0),0));
   if(last&&nextMain!==null&&controlEnd>last.time+1e-9)addSwingsThrough(controlEnd,last.index,false);
  }
  whiteEvents.sort((a,b)=>a.time-b.time||a.index-b.index);

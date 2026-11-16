@@ -30,6 +30,9 @@ main{width:100%;max-width:1370px;margin:0 auto;padding:18px 20px 0}
 .sim-lab .live-preview .stage-primary{margin:0}
 .sim-lab .live-preview .stage-damage{font-size:20px}
 .sim-lab .live-preview .stage-stats{gap:2px 8px;font-size:11px}
+.stage-white{margin-top:4px;color:#d7ded3;font-size:12px;line-height:1.5;font-variant-numeric:tabular-nums}
+.damage-results .white-tail{grid-column:1 / -1;color:#c3cdbd;font-size:12px;line-height:1.5}
+.damage-results .white-tail small{display:block;margin-top:3px;color:#aab8aa}
 .sim-lab .live-preview .stage-flags{margin-top:3px}
 .draft-energy{padding:10px 12px;background:#161b17;border:1px solid #51482d;border-radius:6px}
 .draft-energy-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:5px;font-size:13px;color:#f7e6b2;font-weight:700}
