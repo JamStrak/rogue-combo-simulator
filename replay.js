@@ -1,81 +1,247 @@
 // 播放与原推演共享同一批结果，不重新掷骰。
 function makeReplay(sequence, simulation, damage, cfg) {
- const actions=simulation.rows.map(row=>({...row,id:sequence[row.index]?.id}));
- const direct=new Map(damage.events.filter(e=>e.type==='direct').map(e=>[e.index,e]));
- const events=damage.events.filter(e=>e.type!=='direct').map(e=>({...e}));
- for(const row of actions){const hit=direct.get(row.index);events.push({time:row.time,type:row.error?'error':row.wait?'wait':'action',id:row.id,index:row.index,name:row.name,damage:hit?.damage||0,crit:hit?.crit??null,critMode:hit?.critMode,notes:row.notes});}
+ const actions=simulation.rows.map(row=>{
+  const id=sequence[row.index]?.id;
+  const energyWaitStart=row.energyWait>0?row.time-row.energyWait:null;
+  let gapTime=row.time-(row.controlGap||0);
+  const gaps=(row.gapReasons||[]).map(reason=>{
+   const start=gapTime;
+   gapTime+=reason.duration;
+   return {...reason,start,end:gapTime};
+  });
+  return {...row,id,energyWaitStart,gaps};
+ });
+ const direct=new Map(damage.events.filter(event=>event.type==='direct').map(event=>[event.index,event]));
+ const events=damage.events.filter(event=>event.type!=='direct').map(event=>({...event}));
+ for(const row of actions){
+  const hit=direct.get(row.index);
+  events.push({time:row.time,type:row.error?'error':row.wait?'wait':'action',id:row.id,index:row.index,name:row.name,damage:hit?.damage||0,crit:hit?.crit??null,critMode:hit?.critMode,notes:row.notes});
+ }
  const order={bleed:0,white:1,action:2,wait:2,error:2};
  events.sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
- let cumulative=0;for(const event of events){cumulative+=event.damage||0;event.cumulative=cumulative;}
- return {actions,events,duration:Math.max(0,Number(simulation.time)||0,Number(damage.endTime)||0),cfg:{start:Number(cfg.start)||0,max:Number(cfg.max)||100,regen:Number(cfg.regen)||0},stopped:!!simulation.stopped};
+ let cumulative=0;
+ for(const event of events){cumulative+=event.damage||0;event.cumulative=cumulative;}
+ return {
+  actions,events,stepCount:sequence.length,
+  duration:Math.max(0,simulation.time||0,damage.endTime||0,simulation.controlEnd||0),
+  cfg:{start:Number(cfg.start)||0,max:Number(cfg.max)||100,regen:Number(cfg.regen)||0},
+  stopped:!!simulation.stopped
+ };
 }
 function replayAt(model,time) {
- const t=Math.max(0,Math.min(model.duration,Number(time)||0)), {max,regen}=model.cfg;
- let energy=Math.min(max,model.cfg.start),last=0,boostUntil=0,cp=0,controlEnd=0;
- const restore=(a,b)=>regen*(b-a)+regen*Math.max(0,Math.min(b,boostUntil)-a);
+ const t=Math.max(0,Math.min(model.duration,Number(time)||0));
+ const {max,regen}=model.cfg;
+ let energy=Math.min(max,model.cfg.start),lastTime=0,boostUntil=0,previous=null,next=null;
  for(const row of model.actions){
-  if(row.time>t+1e-9)break;
-  energy=Math.min(max,energy+restore(last,row.time));
-  energy=row.after;last=row.time;cp=row.cp;controlEnd=row.controlEnd;
+  if(row.time>t+1e-9){next=row;break;}
+  energy=row.after;
+  lastTime=row.time;
+  previous=row;
   if(row.id==='adrenaline'&&!row.error)boostUntil=row.time+15;
  }
- energy=Math.min(max,energy+restore(last,t));
- let lo=0,hi=model.events.length;while(lo<hi){const mid=(lo+hi)>>1;if(model.events[mid].time<=t+1e-9)lo=mid+1;else hi=mid;}const total=lo?model.events[lo-1].cumulative:0;
- return {time:t,energy,cp,controlRemaining:Math.max(0,controlEnd-t),damage:total};
+ const boostedTime=Math.max(0,Math.min(t,boostUntil)-lastTime);
+ energy=Math.min(max,energy+regen*(Math.max(0,t-lastTime)+boostedTime));
+ const controlRemaining=Math.max(0,(previous?.controlEnd||0)-t);
+ const gap=next?.gaps.find(interval=>interval.start<=t+1e-9&&interval.end>t+1e-9)??null;
+ const energyWaiting=next?.energyWaitStart!=null&&t+1e-9>=next.energyWaitStart;
+ const step=energyWaiting||gap||next?.id==='wait'?next:previous;
+ let lo=0,hi=model.events.length;
+ while(lo<hi){const mid=(lo+hi)>>1;if(model.events[mid].time<=t+1e-9)lo=mid+1;else hi=mid;}
+ return {
+  time:t,energy,cp:previous?.cp||0,controlRemaining,damage:lo?model.events[lo-1].cumulative:0,
+  step,gap,energyWaiting,blocked:previous?.error?previous:null,previous
+ };
 }
 if(typeof module!=='undefined')module.exports={makeReplay,replayAt};
-// 控件只播放当前已计算的结果；改动配置时由主界面重置。
+
+// 控件只播放当前已计算的结果。改动配置时由主界面重置。
 const replayPlayer={model:null,status:'ready',time:0,seen:0,frame:0,lastStamp:null};
 function setupReplay(){
  const byId=id=>document.getElementById(id);
  const play=byId('combatPlay'),reset=byId('combatReset'),hp=byId('combatHealthInput'),speed=byId('combatSpeed');
- const number=n=>Number((Number(n)||0).toFixed(2)).toLocaleString('zh-CN',{maximumFractionDigits:2});
+ const stage=byId('combatStage'),actionText=byId('combatAction'),floatBox=byId('combatFloat'),logBox=byId('combatLog');
+ const healthBar=byId('combatHealthBar'),healthText=byId('combatHealthText');
+ const energyBar=byId('combatEnergyBar'),energyText=byId('combatEnergyText');
+ const progress=byId('combatProgress'),timeText=byId('combatTime'),damageText=byId('combatDamage');
+ const stepBox=document.createElement('div');
+ stepBox.className='combat-step';
+ stepBox.innerHTML='<span>连招步骤</span><strong id="combatStepIndex">—</strong><b id="combatStepName">等待播放</b>';
+ actionText.parentNode.firstElementChild.textContent='最近事件';
+ actionText.parentNode.prepend(stepBox);
+ const stepIndex=byId('combatStepIndex'),stepName=byId('combatStepName');
+ const diagnostics=document.createElement('div');
+ diagnostics.className='combat-diagnostics';
+ diagnostics.innerHTML='<div><span>木桩状态</span><strong id="combatControlStatus"></strong><small id="combatControlDetail"></small></div><div><span>施放状态</span><strong id="combatCastStatus"></strong><small id="combatCastDetail"></small></div>';
+ stage.after(diagnostics);
+ const controlStatus=byId('combatControlStatus'),controlDetail=byId('combatControlDetail');
+ const castStatus=byId('combatCastStatus'),castDetail=byId('combatCastDetail');
+ const format=new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2});
+ const formatTenths=new Intl.NumberFormat('zh-CN',{maximumFractionDigits:1});
+ const number=n=>format.format(Number(n)||0);
+ const seconds=n=>`${formatTenths.format(Math.ceil(Math.max(0,n)*10-1e-8)/10)} 秒`;
  const maxHealth=()=>Math.max(1,Math.min(10000000,Number(hp.value)||10000));
- const stopFrame=()=>{if(replayPlayer.frame)cancelAnimationFrame(replayPlayer.frame);replayPlayer.frame=0;replayPlayer.lastStamp=null;};
- const label=event=>event.type==='white'?(event.hand==='main'?'主手平砍':'副手平砍'):event.type==='bleed'?(event.id==='garrote'?'绞喉流血':'割裂流血'):event.type==='error'?`${event.name} · 中断`:event.type==='wait'?`${event.name}结束`:event.name;
+ const setText=(node,text)=>{if(node.textContent!==text)node.textContent=text;};
+ const hitClasses=['hit-main','hit-off','hit-skill','hit-bleed'];
+ function stopFrame(){
+  if(replayPlayer.frame)cancelAnimationFrame(replayPlayer.frame);
+  replayPlayer.frame=0;
+  replayPlayer.lastStamp=null;
+ }
+ function paintDiagnostics(model,snap,ready){
+  const {step,gap,energyWaiting,blocked,previous}=snap;
+  setText(stepIndex,`${step?step.index+1:'—'} / ${model.stepCount}`);
+  setText(stepName,step?.name||(ready?'等待播放':'等待起手'));
+  const controlled=snap.controlRemaining>1e-8;
+  const controlState=controlled?'held':gap?'gap':'free';
+  if(stage.dataset.control!==controlState)stage.dataset.control=controlState;
+  setText(controlStatus,controlled?`控制中 · ${seconds(snap.controlRemaining)}`:gap?'控制空档':previous?.controlEnd>0?'控制已结束':'未受控制');
+  const gapBefore=previous?.controlGap>1e-8?`施放前空档 ${number(previous.controlGap)} 秒`:'';
+  setText(controlDetail,gap?`${gap.cause} · 第 ${step.index+1} 步前`:(gapBefore||''));
+
+  const delayed=previous===step&&previous?.energyWait>0;
+  const castState=blocked?'blocked':energyWaiting?'waiting':delayed?'delayed':'free';
+  if(stage.dataset.cast!==castState)stage.dataset.cast=castState;
+  if(diagnostics.dataset.control!==controlState)diagnostics.dataset.control=controlState;
+  if(diagnostics.dataset.cast!==castState)diagnostics.dataset.cast=castState;
+  if(blocked){
+   const reasons=(blocked.notes||[]).filter(note=>!note.startsWith('控制空档'));
+   setText(castStatus,blocked.energyShortage&&!blocked.energyWait?'能量不足 · 连招中断':'施放失败 · 连招中断');
+   setText(castDetail,reasons.join('，'));
+  }else if(energyWaiting){
+   setText(castStatus,`能量不足 · 等 ${seconds(step.time-snap.time)}`);
+   setText(castDetail,`等到 ${number(step.before)} 能量后尝试施放`);
+  }else if(step?.id==='wait'&&step!==previous){
+   setText(castStatus,`主动等待 · ${seconds(step.time-snap.time)}`);
+   setText(castDetail,'');
+  }else if(delayed){
+   setText(castStatus,`本步等待回能 ${number(previous.energyWait)} 秒`);
+   setText(castDetail,'');
+  }else{
+   const done=replayPlayer.status==='done';
+   setText(castStatus,ready?'准备就绪':done?(model.stopped?'连招中断':'连招已结束'):replayPlayer.status==='paused'?'已暂停':'推进中');
+   setText(castDetail,'');
+  }
+ }
  function paint(){
-  const model=replayPlayer.model;if(!model)return;
-  const ready=replayPlayer.status==='ready';const snap=ready?{energy:Math.min(model.cfg.max,model.cfg.start),damage:0}:replayAt(model,replayPlayer.time);
-  const maximum=maxHealth(),remaining=Math.max(0,maximum-snap.damage),energy=Math.max(0,Math.min(model.cfg.max,snap.energy));
-  byId('combatHealthBar').max=maximum;byId('combatHealthBar').value=remaining;byId('combatHealthText').textContent=`${number(remaining)} / ${number(maximum)}`;
-  byId('combatEnergyBar').max=model.cfg.max;byId('combatEnergyBar').value=energy;byId('combatEnergyText').textContent=`${number(energy)} / ${number(model.cfg.max)}`;
-  byId('combatProgress').max=model.duration||1;byId('combatProgress').value=replayPlayer.time;
-  byId('combatTime').textContent=`${number(replayPlayer.time)} / ${number(model.duration)} 秒`;
-  const total=byId('combatDamage');if(total)total.textContent=number(snap.damage);
-  play.textContent=replayPlayer.status==='playing'?'暂停':replayPlayer.status==='paused'?'继续':replayPlayer.status==='done'?'重新播放':'播放连招';
+  const model=replayPlayer.model;
+  if(!model)return;
+  const ready=replayPlayer.status==='ready';
+  const snap=ready?{energy:Math.min(model.cfg.max,model.cfg.start),damage:0}:replayAt(model,replayPlayer.time);
+  const maximum=maxHealth();
+  const remaining=Math.max(0,maximum-snap.damage);
+  const energy=Math.max(0,Math.min(model.cfg.max,snap.energy));
+  if(healthBar.max!==maximum)healthBar.max=maximum;
+  if(healthBar.value!==remaining)healthBar.value=remaining;
+  setText(healthText,`${number(remaining)} / ${number(maximum)}`);
+  if(energyBar.max!==model.cfg.max)energyBar.max=model.cfg.max;
+  energyBar.value=energy;
+  setText(energyText,`${formatTenths.format(energy)} / ${number(model.cfg.max)}`);
+  if(progress.max!==(model.duration||1))progress.max=model.duration||1;
+  progress.value=replayPlayer.time;
+  setText(timeText,`${formatTenths.format(replayPlayer.time)} / ${formatTenths.format(model.duration)} 秒`);
+  if(damageText)setText(damageText,number(snap.damage));
+  paintDiagnostics(model,snap,ready);
+  const labels={playing:'暂停',paused:'继续',done:'重新播放',ready:'播放连招'};
+  setText(play,labels[replayPlayer.status]);
   play.disabled=!model.events.length;
  }
- function resetState(){stopFrame();replayPlayer.status='ready';replayPlayer.time=0;replayPlayer.seen=0;byId('combatLog').replaceChildren();byId('combatFloat').replaceChildren();byId('combatAction').textContent='准备就绪';paint();}
- function present(event){
-  const title=label(event),amount=event.damage||0;const log=document.createElement('div');log.className='combat-log-entry';
-  const ts=document.createElement('time');ts.textContent=`${number(event.time)}s`;const text=document.createElement('span');text.textContent=title;
-  log.append(ts,text);if(amount>0){const damage=document.createElement('b');damage.textContent=`−${number(amount)}`;log.append(damage);}
-  if(event.type==='error')log.classList.add('combat-event-error');
-  byId('combatLog').prepend(log);while(byId('combatLog').children.length>6)byId('combatLog').lastChild.remove();
-  byId('combatAction').textContent=title;
+ function resetState(){
+  stopFrame();
+  replayPlayer.status='ready';
+  replayPlayer.time=0;
+  replayPlayer.seen=0;
+  logBox.replaceChildren();
+  floatBox.replaceChildren();
+  stage.classList.remove(...hitClasses);
+  setText(actionText,'—');
+  paint();
+ }
+ function eventLabel(event){
+  if(event.type==='white')return event.hand==='main'?'主手平砍':'副手平砍';
+  if(event.type==='bleed')return event.id==='garrote'?'绞喉流血':'割裂流血';
+  if(event.type==='error')return `${event.name} · 中断`;
+  return event.id==='wait'?'等待结束':event.name;
+ }
+ function present(event,floatLanes){
+  const title=eventLabel(event),amount=event.damage||0;
+  const critical=event.crit===true||event.critMode==='rolled-crit';
+  const log=document.createElement('div');
+  log.className='combat-log-entry';
+  log.dataset.kind=event.type;
+  const time=document.createElement('time');
+  time.textContent=`${number(event.time)}s`;
+  const titleText=document.createElement('span');
+  const stepLabel=['action','wait','error'].includes(event.type)?`第 ${event.index+1} 步 · `:'';
+  titleText.textContent=stepLabel+title;
+  log.append(time,titleText);
   if(amount>0){
-   const floating=document.createElement('span');floating.className=`combat-float-${event.type}`;floating.textContent=`−${number(amount)}${event.crit===true||event.critMode==='rolled-crit'?' 暴击':''}`;
-   byId('combatFloat').append(floating);setTimeout(()=>floating.remove(),1000);
+   const damage=document.createElement('b');
+   damage.textContent=`−${number(amount)}${critical?' 暴击':''}`;
+   if(critical)damage.className='combat-log-crit';
+   log.append(damage);
+   const floating=document.createElement('span');
+   floating.className=`combat-float-${event.type}`;
+   if(event.hand)floating.dataset.hand=event.hand;
+   const lane=event.hand||event.type;
+   const stack=floatLanes.get(lane)||0;
+   floatLanes.set(lane,stack+1);
+   if(stack>0)floating.style.setProperty('--float-stack',Math.min(4,stack));
+   const amountText=document.createElement('b');
+   amountText.textContent=`−${number(amount)}`;
+   floating.append(amountText);
+   if(critical){
+    floating.classList.add('combat-float-crit');
+    const critLabel=document.createElement('small');
+    critLabel.textContent='暴击';
+    floating.append(critLabel);
+   }
+   floatBox.append(floating);
+   setTimeout(()=>floating.remove(),1050);
   }
-  const stage=byId('combatStage');stage.classList.remove('hit-main','hit-off','hit-skill','hit-bleed');void stage.offsetWidth;
-  stage.classList.add(event.type==='white'?(event.hand==='main'?'hit-main':'hit-off'):event.type==='bleed'?'hit-bleed':'hit-skill');
+  if(event.type==='error')log.classList.add('combat-event-error');
+  logBox.prepend(log);
+  while(logBox.children.length>12)logBox.lastChild.remove();
+  setText(actionText,title);
+  if(event.type==='white')return event.hand==='main'?'hit-main':'hit-off';
+  if(event.type==='bleed')return 'hit-bleed';
+  if(event.type==='action'&&amount>0)return 'hit-skill';
  }
  function step(stamp){
   if(replayPlayer.status!=='playing')return;
-  if(replayPlayer.lastStamp!==null)replayPlayer.time=Math.min(replayPlayer.model.duration,replayPlayer.time+(stamp-replayPlayer.lastStamp)/1000*(Number(speed.value)||1));
+  if(replayPlayer.lastStamp!==null){
+   const elapsed=Math.max(0,stamp-replayPlayer.lastStamp)/1000;
+   replayPlayer.time=Math.min(replayPlayer.model.duration,replayPlayer.time+elapsed*(Number(speed.value)||1));
+  }
   replayPlayer.lastStamp=stamp;
-  const events=replayPlayer.model.events;while(replayPlayer.seen<events.length&&events[replayPlayer.seen].time<=replayPlayer.time+1e-9)present(events[replayPlayer.seen++]);
-  if(replayPlayer.time>=replayPlayer.model.duration){replayPlayer.status='done';stopFrame();if(replayPlayer.model.stopped)byId('combatAction').textContent='连招已中断 · 已播放已产生的尾伤';}
-  paint();if(replayPlayer.status==='playing')replayPlayer.frame=requestAnimationFrame(step);
+  const events=replayPlayer.model.events,hits=new Set(),floatLanes=new Map();
+  while(replayPlayer.seen<events.length&&events[replayPlayer.seen].time<=replayPlayer.time+1e-9){
+   const hit=present(events[replayPlayer.seen++],floatLanes);
+   if(hit)hits.add(hit);
+  }
+  if(hits.size){
+   stage.classList.remove(...hitClasses);
+   void stage.offsetWidth;
+   stage.classList.add(...hits);
+  }
+  if(replayPlayer.time>=replayPlayer.model.duration){replayPlayer.status='done';stopFrame();}
+  paint();
+  if(replayPlayer.status==='playing')replayPlayer.frame=requestAnimationFrame(step);
  }
  play.addEventListener('click',()=>{
-  if(!replayPlayer.model||!replayPlayer.model.events.length)return;
+  if(!replayPlayer.model?.events.length)return;
   if(replayPlayer.status==='playing'){stopFrame();replayPlayer.status='paused';paint();return;}
   if(replayPlayer.status==='done')resetState();
-  replayPlayer.status='playing';replayPlayer.lastStamp=null;step(performance.now());
+  replayPlayer.status='playing';
+  replayPlayer.lastStamp=null;
+  step(performance.now());
  });
  reset.addEventListener('click',resetState);
  hp.addEventListener('change',()=>{hp.value=String(maxHealth());resetState();});
- document.addEventListener('visibilitychange',()=>{if(document.hidden&&replayPlayer.status==='playing'){stopFrame();replayPlayer.status='paused';paint();}});
- replayPlayer.update=(sequence,simulation,damage,cfg)=>{stopFrame();replayPlayer.model=makeReplay(sequence,simulation,damage,cfg);resetState();};
+ document.addEventListener('visibilitychange',()=>{
+  if(document.hidden&&replayPlayer.status==='playing'){stopFrame();replayPlayer.status='paused';paint();}
+ });
+ replayPlayer.update=(sequence,simulation,damage,cfg)=>{
+  replayPlayer.model=makeReplay(sequence,simulation,damage,cfg);
+  resetState();
+ };
 }

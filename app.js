@@ -8,6 +8,14 @@ state.damage={...damageInitial,skillModel:'weapon',...savedDamage,weapon:{...ref
 for(const id of Object.keys(damageInitial.values))if(!Number.isFinite(Number(state.damage.values[id]))||Number(state.damage.values[id])<0||Number(state.damage.values[id])>1000000)state.damage.values[id]=damageInitial.values[id];
 for(const [key,min,max] of [['attackPower',0,10000],['mainMin',0,10000],['mainMax',0,10000],['mainSpeed',0.1,10],['offMin',0,10000],['offMax',0,10000],['offSpeed',0.1,10],['offhandPenalty',0,2],['strikeCoefficient',0,2]]){const value=Number(state.damage.weapon[key]);if(!Number.isFinite(value)||value<min||value>max)state.damage.weapon[key]=referenceWeapon[key];}
 state.damage.weapon.enabled=!!state.damage.weapon.enabled;
+const weaponTypes=['dagger','fist','sword','mace','axe','other'];
+for(const key of ['mainWeaponType','offWeaponType'])if(!weaponTypes.includes(state.cfg[key]))state.cfg[key]='dagger';
+if(!['random','expected'].includes(state.damage.whiteCritMode))state.damage.whiteCritMode='random';
+if(!['base','manual'].includes(state.damage.bleedCritSource)){
+ const savedRate=savedDamage.bleedCritRate;
+ state.damage.bleedCritSource=savedRate!==undefined&&Number(savedRate)!==damageInitial.bleedCritRate?'manual':'base';
+}
+if(savedDamage.bleedCritMode===undefined)state.damage.bleedCritMode='random';
 if(!['weapon','manual'].includes(state.damage.skillModel))state.damage.skillModel='weapon';
 if(!['expected','random'].includes(state.damage.bleedCritMode))state.damage.bleedCritMode='expected';
 if(!Number.isFinite(Number(state.damage.bleedCritRate))||state.damage.bleedCritRate<0||state.damage.bleedCritRate>100)state.damage.bleedCritRate=damageInitial.bleedCritRate;
@@ -16,6 +24,9 @@ if(!Number.isFinite(Number(state.damage.critMultiplier))||state.damage.critMulti
 if(!Number.isFinite(Number(state.damage.burstWindow))||state.damage.burstWindow<0.1||state.damage.burstWindow>120)state.damage.burstWindow=damageInitial.burstWindow;
 if(!Array.isArray(state.savedCombos))state.savedCombos=[];
 if(!state.talents || validateTalents(state.talents)) {state.talents=blankTalents();state.talentsApplied=false;}
+// Older saved builds predate the weapon-specific critical strike mapping.
+if(state.talentsApplied&&state.cfg.slashRank===undefined)state.cfg.slashRank=state.talents[1][16]||0;
+if(state.talentsApplied&&state.cfg.lethalityRank===undefined)state.cfg.lethalityRank=state.talents[0][8]||0;
 let selectedTalent=null, mobileTalentBranch=0;
 const numIds=['start','max','regen','gcd','reduction','drReset','drSecond','drThird','crit','gapTolerance','flawlessReduction'], boolIds=['prepared','startStealth','startCombat','mutilate','adrenaline','coldblood','ghost','autoWait','dr'];
 function save(){try{localStorage.setItem('shadow-calc-v1',JSON.stringify(state));return true}catch{return false}}
@@ -47,6 +58,10 @@ function renderNotes(notes,error=false){
 function syncDamageEditor(){
  const select=$('#damageSkill'),id=select.value,isBleed=id==='garrote'||id==='rupture',isRupture=id==='rupture',dot=state.damage.bleeds[id];
  $('#weaponEnabled').checked=state.damage.weapon.enabled;$('#damageModel').value=state.damage.skillModel;document.querySelectorAll('[data-weapon]').forEach(el=>el.value=state.damage.weapon[el.dataset.weapon]);$('#damageWindow').value=state.damage.burstWindow;$('#damageCrit').value=state.damage.critMultiplier;$('#damageBleedCrit').value=state.damage.bleedCritRate;$('#damageBleedMode').value=state.damage.bleedCritMode;
+ $('#damageWhiteMode').value=state.damage.whiteCritMode;
+ $('#damageBleedSource').value=state.damage.bleedCritSource;
+ $('#damageBleedRateLabel').hidden=state.damage.bleedCritSource!=='manual';
+ for(const select of $$('[data-weapon-type]'))select.value=state.cfg[select.dataset.weaponType+'WeaponType'];
  $('#damageBase').disabled=state.damage.skillModel==='weapon'&&!isBleed;$('#damageDurationLabel').hidden=!isBleed;$('#damageIntervalLabel').hidden=!isBleed;$('#damageDurationPerLabel').hidden=!isRupture;$('#damageTickPerLabel').hidden=!isRupture;
  if(isBleed){
   $('#damageBase').value=isRupture?dot.tickDamageBase:dot.tickDamage;
@@ -63,20 +78,26 @@ function syncDamageEditor(){
 function setupDamageEditor(){
  $('#damageSkill').innerHTML=[...Object.keys(damageInitial.values),'garrote','rupture'].map(id=>`<option value="${id}">${state.book[id].name}</option>`).join('');syncDamageEditor();
  $('#damageSkill').onchange=syncDamageEditor;
+ for(const [id,key] of [['damageWhiteMode','whiteCritMode'],['damageBleedSource','bleedCritSource']]){
+  $('#'+id).onchange=e=>{state.damage[key]=e.target.value;syncDamageEditor();drawResult();save();};
+ }
+ for(const select of $$('[data-weapon-type]'))select.onchange=e=>{
+  state.cfg[select.dataset.weaponType+'WeaponType']=e.target.value;drawResult();save();
+ };
  $('#weaponEnabled').onchange=e=>{state.damage.weapon.enabled=e.target.checked;drawResult();save();};
  $('#damageModel').onchange=e=>{state.damage.skillModel=e.target.value;syncDamageEditor();drawResult();save();};
  document.querySelectorAll('[data-weapon]').forEach(el=>el.addEventListener('input',e=>{if(e.target.value==='')return;const value=Number(e.target.value),min=Number(e.target.min),max=Number(e.target.max);if(Number.isFinite(value)&&value>=min&&value<=max){state.damage.weapon[e.target.dataset.weapon]=value;drawResult();save();}}));
- $('#weaponPreset').onclick=()=>{state.damage.weapon={...referenceWeapon};syncDamageEditor();drawResult();save();};
+ $('#weaponPreset').onclick=()=>{state.damage.weapon={...referenceWeapon};state.cfg.mainWeaponType=state.cfg.offWeaponType='dagger';syncDamageEditor();drawResult();save();};
  $('#damageBleedMode').onchange=e=>{state.damage.bleedCritMode=e.target.value;drawResult();save();};
  for(const [selector,key,min,max] of [['#damageWindow','burstWindow',0.1,120],['#damageCrit','critMultiplier',1,5],['#damageBleedCrit','bleedCritRate',0,100]])$(selector).addEventListener('input',e=>{if(e.target.value==='')return;const n=Number(e.target.value);if(Number.isFinite(n)&&n>=min&&n<=max){state.damage[key]=n;drawResult();save();}});
  $('#damageBase').addEventListener('input',e=>{if(e.target.value==='')return;const n=Number(e.target.value),id=$('#damageSkill').value;if(Number.isFinite(n)&&n>=0&&n<=1000000){if(id==='garrote')state.damage.bleeds.garrote.tickDamage=n;else if(id==='rupture')state.damage.bleeds.rupture.tickDamageBase=n;else state.damage.values[id]=n;drawResult();save();}});
  for(const [selector,property] of [['#damageDuration','duration'],['#damageInterval','interval'],['#damageDurationPer','durationPerCombo'],['#damageTickPer','tickDamagePerCombo']])$(selector).addEventListener('input',e=>{if(e.target.value==='')return;const id=$('#damageSkill').value,n=Number(e.target.value),key=property==='duration'&&id==='rupture'?'durationBase':property,min=property==='interval'||(property==='duration'&&id==='garrote')?0.1:0,max=property==='tickDamagePerCombo'?1000000:120;if(state.damage.bleeds[id]&&Number.isFinite(n)&&n>=min&&n<=max){state.damage.bleeds[id][key]=n;drawResult();save();}});
- $('#damageReset').onclick=()=>{state.damage={...damageDefaults(),skillModel:'weapon',weapon:{...referenceWeapon}};syncDamageEditor();drawResult();save();};
+ $('#damageReset').onclick=()=>{state.damage={...damageDefaults(),skillModel:'weapon',whiteCritMode:'random',bleedCritMode:'random',bleedCritSource:'base',weapon:{...referenceWeapon}};state.cfg.mainWeaponType=state.cfg.offWeaponType='dagger';syncDamageEditor();drawResult();save();};
 }
 function damageLabel(row){return !row?'—':fmt(row.damage);}
 function stageFlags(row,limit=Infinity){
  const notes=row.notes.flatMap(note=>note.split('；'));
- const flags=notes.filter(note=>row.error||/能量不足|可反制空档|控制空档|控制免疫|可能提前打破|连击点溢出/.test(note)||(!/未触发/.test(note)&&/暴击 [\d.]+%：是|(?:：|封印命运)触发|强化破甲：5 星返还/.test(note)));
+ const flags=notes.filter(note=>row.error||/暴击 [\d.]+%：是(?!.*未触发)/.test(note)||/能量不足|可反制空档|控制空档|控制免疫|可能提前打破|连击点溢出/.test(note)||(!/未触发/.test(note)&&/暴击 [\d.]+%：是|(?:：|封印命运)触发|强化破甲：5 星返还/.test(note)));
  flags.sort((a,b)=>Number(/能量不足|空档|免疫|打破|溢出/.test(b))-Number(/能量不足|空档|免疫|打破|溢出/.test(a)));
  return flags.slice(0,limit).map(note=>{const cls=row.error||/能量不足|空档|免疫|打破/.test(note)?'note-warning':/溢出/.test(note)?'note-overflow':'note-success';const short=note.replace(/ [\d.]+%：触发/gu,' 触发').replace(/暴击 [\d.]+%：是/gu,'暴击');return `<span class="stage-flag ${cls}">${escapeHtml(short)}</span>`}).join('');
 }
@@ -89,10 +110,10 @@ function stageDetails(row,dmg){
 }
 function drawNearbyResult(v,damage){
  const last=v.rows.at(-1), panel=$('#livePreview'),byDamage=new Map(damage.rows.map(row=>[row.index,row]));
- if(!last){panel.innerHTML='<div class="live-title"><strong>即时推演</strong><a href="#section-results">完整结果 ↓</a></div><div class="live-empty">点击下方技能，结果会显示在这里。</div>';}
+ if(!last){panel.innerHTML='<div class="live-title"><strong>即时推演</strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div><div class="live-empty">点击下方技能，结果会显示在这里。</div>';}
  else{
   const blocked=v.stopped?' · 已中断'+(state.sequence.length>last.index+1?'，后续未执行':''):'';
-  panel.innerHTML=`<div class="live-title"><strong>第 ${last.index+1} 步 · ${escapeHtml(last.name)} <small>${fmt(last.time)}秒${blocked}</small></strong><a href="#section-results">完整结果 ↓</a></div>${stageMetrics(last,byDamage.get(last.index))}<div class="stage-flags">${stageFlags(last,2)}</div>`;
+  panel.innerHTML=`<div class="live-title"><strong>第 ${last.index+1} 步 · ${escapeHtml(last.name)} <small>${fmt(last.time)}秒${blocked}</small></strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div>${stageMetrics(last,byDamage.get(last.index))}<div class="stage-flags">${stageFlags(last,2)}</div>`;
  }
  const byIndex=new Map(v.rows.map(row=>[row.index,row]));
  $$('#sequence [data-step-preview]').forEach(el=>{
@@ -100,7 +121,25 @@ function drawNearbyResult(v,damage){
   el.innerHTML=row?`${stageMetrics(row,dmg)}<div class="stage-flags">${stageFlags(row)}</div>${stageDetails(row,dmg)}`:'<span class="note-warning">前面的步骤已中断，尚未执行</span>';
  });
 }
-function drawResult(){drawPalette();const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const v=simulate(state.sequence,state.cfg,state.book),damage=calculateDamage(state.sequence,v,state.cfg,state.damage),damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
+function drawGearOverview(){
+ const {weapon,ap,critRate,mainCrit,offCrit,mainNormal,offNormal,mainExpected,offExpected}=weaponMetrics(state.damage,state.cfg);
+ const matches=(...keys)=>keys.every(key=>Number(weapon[key])===referenceWeapon[key]);
+ const isMain=state.cfg.mainWeaponType==='dagger'&&matches('mainMin','mainMax','mainSpeed');
+ const isOff=state.cfg.offWeaponType==='dagger'&&matches('offMin','offMax','offSpeed');
+ $('#gearProfile').textContent=isMain&&isOff&&matches('attackPower','offhandPenalty','strikeCoefficient')?'示例配装 · 迅影八件 / 双匕首':'自定义配装';
+ $('#mainWeaponName').textContent=isMain?'觅心者':'自定义';
+ $('#offWeaponName').textContent=isOff?'扰乱之匕':'自定义';
+ for(const [hand,normal,expected] of [['main',mainNormal,mainExpected],['off',offNormal,offExpected]]){
+  $('#'+hand+'WeaponHit').innerHTML=`普通命中 <b>${fmt(normal)}</b> · 含暴击每击期望 <b>${fmt(expected)}</b>${weapon.enabled?'':' · 平砍关闭'}`;
+ }
+ const skillModel=state.damage.skillModel==='weapon'?'装备公式':'手动伤害';
+ $('#activeGear').textContent=`${fmt(ap)} 攻强 · 主手 ${fmt(weapon.mainSpeed)}s / 副手 ${fmt(weapon.offSpeed)}s · ${weapon.enabled?'平砍开启':'平砍关闭'} · ${skillModel}`;
+ const skillRates=[['背刺','backstab'],['伏击','ambush'],['刺击','strike']].map(([name,id])=>[name,meleeCritChance(state.cfg,id)]);
+ skillRates.push(['毁伤主手',meleeCritChance(state.cfg,'mutilate','main')],['毁伤副手',meleeCritChance(state.cfg,'mutilate','off')]);
+ $('#gearSkillCrit').innerHTML=skillRates.map(([name,rate])=>`<span>${name} <b>${fmt(rate)}%</b></span>`).join('');
+ $('#gearCritGuide').textContent=`通用暴击 ${fmt(critRate)}% · 主手白字 ${fmt(mainCrit)}% · 副手白字 ${fmt(offCrit)}%。基础值不含恶意、劈斩和技能专属天赋。`;
+}
+function drawResult(){drawGearOverview();drawPalette();const oldAnalysis=$('#probabilityResult');if(oldAnalysis&&oldAnalysis.dataset.ready){oldAnalysis.innerHTML='配置或队列已变化，请重新计算概率。';delete oldAnalysis.dataset.ready;}drawCompare();const v=simulate(state.sequence,state.cfg,state.book),damage=calculateDamage(state.sequence,v,state.cfg,state.damage),damageRows=new Map(damage.rows.map(row=>[row.index,row])),$s=$('#status');$s.textContent=v.stopped?'存在阻断':'计算完成';$s.className='status '+(v.stopped?'bad':'good');$('#summary').innerHTML=`<div><span>最终能量</span><b>${fmt(v.energy)} <small>/ ${fmt(state.cfg.max)}</small></b></div><div><span>最终连击点</span><b>${v.cp} <small>/ 5</small></b></div><div><span>本段历时</span><b>${fmt(v.time)} <small>秒</small></b></div><div class="${v.gap>0?'danger':''}"><span>累计控制空档</span><b>${fmt(v.gap)} <small>秒</small></b></div>`;$('#damageSummary').innerHTML=`<div class="summary-hero"><span>${v.stopped?'已施加的估算伤害（中断）':'估算总伤害（含尾伤）'}</span><b>${fmt(damage.total)}</b></div><div><span>动作期间伤害</span><b>${fmt(damage.during)}</b></div><div><span>控制收尾平砍</span><b>${fmt(damage.whiteTailDamage)}</b></div><div><span>结束后流血尾伤</span><b>${fmt(damage.tailDamage)}</b></div><div><span>平均伤害 / 秒</span><b>${damage.dps===null?'—':fmt(damage.dps)}</b></div><div><span>${fmt(state.damage.burstWindow)} 秒最高爆发</span><b>${fmt(damage.peak.damage)}</b><small> · ${fmt(damage.peak.start)}–${fmt(damage.peak.end)} 秒</small></div>`;
 $('#damageMethod').textContent='平砍按武器速度和面板攻击强度估算，暴击按期望；敌对技能开启自动攻击，消失、脱战、凿击和致盲假设停手，之后敌对技能重新开始计时。末步控制期间的平砍单列，不随流血尾伤延长。刺击按副手武器和可调整倍率估算，是否额外受副手惩罚有待验证。技能按选定模式计算；忽略护甲、命中、躲闪、武器触发和毒药；流血跳伤仍可能提前打破控制但尚未模拟。计入刺击、伏击、鬼魅攻击、出血、毁伤、背刺、邪恶攻击、凿击、刺骨的直接伤害，及绞喉、割裂的逐跳流血。'+(state.damage.bleedCritMode==='random'?'流血每跳独立掷骰，同种子结果可复现，可重新掷骰。':'流血按暴击概率计算期望。')+'直接攻击有掷骰则沿用，否则按期望估算。相同流血重施覆盖旧效果；爆发窗口含起点、不含终点。平均值以推演结束和最后伤害时刻中较晚者为分母。未计毒药、武器触发及未自动套用的伤害天赋。';
 const ticks=damage.events.filter(event=>event.type==='bleed');$('#bleedTimeline').innerHTML=ticks.length?`<p class="small">${state.damage.bleedCritMode==='random'?'逐跳独立判定暴击':'每跳显示含暴击概率的期望伤害'}；总计 ${ticks.length} 跳，列出前 ${Math.min(ticks.length,1000)} 跳。</p><div class="bleed-timeline">${ticks.slice(0,1000).map(event=>`<span>${fmt(event.time)} 秒 · ${state.book[event.id].name} <b${event.crit===true?' class="note-success"':''}>${fmt(event.damage)}${event.crit===true?' 暴击':event.crit===false?' 普通':' 期望'}</b></span>`).join('')}</div>`:'<p class="small">当前推演没有流血跳伤。</p>';
 $('#warnings').textContent=state.cfg.dr?'PvP 递减采用假设：同组第 2 / 3 次分别按设定比例，第 4 次免疫；重置从控制结束计时。':'PvP 递减当前关闭，控制时长可能高估。';$('#rows').innerHTML=v.rows.length?v.rows.map(x=>{const dmg=damageRows.get(x.index);return `<article class="stage-card${x.error?' error':''}"><div class="stage-head"><strong><span> ${String(x.index+1).padStart(2,'0')} </span>${escapeHtml(x.name)}</strong><time>${fmt(x.time)} 秒</time></div>${stageMetrics(x,dmg)}<div class="stage-flags">${stageFlags(x)}</div>${stageDetails(x,dmg)}</article>`}).join(''):'<div class="empty">添加技能后自动计算</div>';drawNearbyResult(v,damage);drawComboComparison();replayPlayer.update(state.sequence,v,damage,state.cfg);}
@@ -124,20 +163,37 @@ function drawComboComparison(){
  target.innerHTML=`<div class="comparison-scroll"><table><thead><tr><th>指标</th><th>A · ${escapeHtml(a.name)}</th><th>B · ${escapeHtml(b.name)}</th><th>差异</th></tr></thead><tbody><tr><th>执行结果</th><td>${status(x)}</td><td>${status(y)}</td><td>—</td></tr>${metrics.map(([label,v,w,unit])=>`<tr><th>${label}</th><td>${v===null?'—':fmt(v)+' '+unit}</td><td>${w===null?'—':fmt(w)+' '+unit}</td><td>${diff(v,w)}${v===null||w===null||Math.abs(v-w)<0.005?'':` ${unit}`}</td></tr>`).join('')}</tbody></table></div><p class="comparison-insights">${insights.length?insights.join('；'):x.stopped||y.stopped?'存在中断，请先查看各自中断原因。':'两套连招在控制时间、空档和回能等待方面相同。'}</p><p class="small">中断结果仅统计执行到中断时的情况，不能直接与完整连招比较；控制总时长不重复计算覆盖部分。最高爆发按相同长度的窗口各自寻找峰值；爆发窗口含起点、不含终点；总伤害包括连招结束后已施加的流血尾伤，平均伤害以推演结束或最后跳伤中较晚的时刻计算。${state.damage.bleedCritMode==='random'?'流血逐跳独立掷骰。':'流血暴击按概率期望估算。'}</p>`;
 }
 function refresh(){drawSequence();drawResult();save();}
-function setupMobileNavigation(){
- const sections=[['talents','.talent-panel','天赋'],['settings','aside .panel:first-child','设定'],['builder','.builder','连招'],['library','.library','对比'],['probability','.probability','概率'],['results','.results','结果']];
- const collapsible=new Set(['talents','settings','library','probability']);
- for(const [id,selector] of sections){const panel=$(selector);panel.id='section-'+id;if(!collapsible.has(id))continue;const heading=panel.firstElementChild,content=document.createElement('div'),toggle=document.createElement('button');content.className='mobile-panel-content';content.id='mobile-content-'+id;while(heading.nextSibling)content.appendChild(heading.nextSibling);toggle.type='button';toggle.className='mobile-disclosure';toggle.setAttribute('aria-controls',content.id);toggle.setAttribute('aria-expanded','false');toggle.textContent='展开';toggle.onclick=()=>setMobilePanel(panel,!panel.classList.contains('mobile-open'));panel.classList.add('mobile-collapsible');panel.append(toggle,content);}
- const skillPanel=$('aside .panel:nth-child(2)');{const heading=skillPanel.firstElementChild,content=document.createElement('div'),toggle=document.createElement('button');content.className='mobile-panel-content';content.id='mobile-content-skill-settings';while(heading.nextSibling)content.appendChild(heading.nextSibling);toggle.type='button';toggle.className='mobile-disclosure';toggle.setAttribute('aria-controls',content.id);toggle.setAttribute('aria-expanded','false');toggle.textContent='展开';toggle.onclick=()=>setMobilePanel(skillPanel,!skillPanel.classList.contains('mobile-open'));skillPanel.classList.add('mobile-collapsible');skillPanel.append(toggle,content);}
- const nav=document.createElement('nav');nav.className='mobile-nav';nav.setAttribute('aria-label','手机快捷导航');nav.innerHTML=sections.map(([id,,name])=>`<button type="button" data-mobile-nav="${id}">${name}</button>`).join('');$('header').after(nav);nav.onclick=e=>{const button=e.target.closest('[data-mobile-nav]');if(!button)return;const panel=$('#section-'+button.dataset.mobileNav);if(panel.classList.contains('mobile-collapsible'))setMobilePanel(panel,true);panel.scrollIntoView({behavior:'smooth',block:'start'});};
+function setupWorkspaceNavigation(){
+ const views=[...$$('[data-view]')];
+ const links=[...$$('[data-view-link]')];
+ function route(scroll){
+  const hash=location.hash.slice(1);
+  const anchor=document.getElementById(hash);
+  const key=views.find(view=>view.dataset.view===hash)?.dataset.view
+    || anchor?.closest('[data-view]')?.dataset.view || 'builder';
+  for(const view of views)view.hidden=view.dataset.view!==key;
+  for(const link of links){
+   if(link.dataset.viewLink===key)link.setAttribute('aria-current','page');
+   else link.removeAttribute('aria-current');
+  }
+  if(key!=='builder'&&replayPlayer.status==='playing')$('#combatPlay').click();
+  if(anchor instanceof HTMLDetailsElement)anchor.open=true;
+  if(anchor)anchor.scrollIntoView({block:'start'});
+  else if(scroll)window.scrollTo(0,0);
+ }
+ window.addEventListener('hashchange',()=>route(true));
+ $('.workspace-nav').addEventListener('click',event=>{
+  const link=event.target.closest('[data-view-link]');
+  if(link&&link.hash===location.hash)route(true);
+ });
+ route(false);
  const tabs=document.createElement('div');tabs.className='mobile-talent-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','天赋分支');tabs.innerHTML=talentTrees.map((tree,i)=>`<button type="button" role="tab" data-mobile-branch="${i}">${tree.name}</button>`).join('');$('#talentTree').before(tabs);tabs.onclick=e=>{const b=e.target.closest('[data-mobile-branch]');if(!b)return;mobileTalentBranch=Number(b.dataset.mobileBranch);updateTalentTabs();};
 }
-function setMobilePanel(panel,open){panel.classList.toggle('mobile-open',open);const toggle=panel.querySelector('.mobile-disclosure');toggle.setAttribute('aria-expanded',String(open));toggle.textContent=open?'收起':'展开';}
 function updateTalentTabs(){const branches=[...document.querySelectorAll('#talentTree .talent-branch')];branches.forEach((branch,i)=>branch.classList.toggle('mobile-active',i===mobileTalentBranch));document.querySelectorAll('[data-mobile-branch]').forEach((tab,i)=>{tab.setAttribute('aria-selected',String(i===mobileTalentBranch));});}
-setupMobileNavigation();setupDamageEditor();setupReplay();syncConfig();editDraw();drawTalents();drawLibrary();refresh();
+setupDamageEditor();setupReplay();setupWorkspaceNavigation();syncConfig();editDraw();drawTalents();drawLibrary();refresh();
 numIds.forEach(id=>$('#'+id).addEventListener('input',e=>{if(e.target.value==='')return;let n=Number(e.target.value);if(!Number.isFinite(n)||n<Number(e.target.min)||n>Number(e.target.max))return;state.cfg[id]=n;if(id==='reduction')$('#dirtyDeeds').value=[0,10,20].includes(n)?String(n):'custom';drawResult();save()}));boolIds.forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=e.target.checked;drawResult();save()}));
 ['composure','exposeRank','ruthlessRank','ruthlessMode','relentlessRank','relentlessMode','initiativeRank','sealRank','bootRank','flashRank','punctureRank','ambushCritRank','efficientRank','dirtyTricksRank'].forEach(id=>$('#'+id).addEventListener('change',e=>{state.cfg[id]=id.endsWith('Mode')?e.target.value:Number(e.target.value);drawResult();save()}));
-$('#reroll').onclick=()=>{state.cfg.seed=(Math.random()*4294967295>>>0)||1;drawResult();save()};
+$('#reroll').onclick=$('#rerollReplay').onclick=()=>{state.cfg.seed=(Math.random()*4294967295>>>0)||1;drawResult();save()};
 $('#editSkill').addEventListener('change',editDraw);['Cost','Gain','Cc','Cd'].forEach(n=>$('#edit'+n).addEventListener('input',e=>{if(e.target.value==='')return;let v=Number(e.target.value);if(Number.isFinite(v)&&v>=0&&v<=Number(e.target.max)){state.book[$('#editSkill').value][n.toLowerCase()]=v;if(n==='Cost')updateSkillCostHint();refresh()}}));$('#editDr').addEventListener('change',e=>{state.book[$('#editSkill').value].dr=e.target.value;refresh()});
 $('#restoreSkills').onclick=()=>{state.book=structuredClone(initial.book);editDraw();refresh()};$('#palette').onclick=e=>{let b=e.target.closest('[data-add]');if(b){state.sequence.push({id:b.dataset.add,...(b.dataset.add==='wait'?{wait:1}:{}),...(b.dataset.add==='premed'?{offGcd:true}:{})});refresh()}};
 $('#sequence').onclick=e=>{const b=e.target.closest('button');if(!b)return;let i=Number(b.dataset.up??b.dataset.down??b.dataset.del);if(b.dataset.del!==undefined)state.sequence.splice(i,1);else {let j=b.dataset.up!==undefined?i-1:i+1;if(j>=0&&j<state.sequence.length)[state.sequence[i],state.sequence[j]]=[state.sequence[j],state.sequence[i]]}refresh()};
@@ -162,25 +218,214 @@ $('#analyze').onclick=()=>{
 $('#dirtyDeeds').addEventListener('change',e=>{if(e.target.value==='custom')return;state.cfg.reduction=Number(e.target.value);$('#reduction').value=state.cfg.reduction;drawResult();save()});
 
 const myTalentLink='2253202120105003--0052230313110011';
+const talentTree=$('#talentTree');
+const talentDetail=$('#talentDetail');
+
+function drawTalentBranch(tree, branchIndex){
+ const nodes=tree.talents.map((talent,index)=>{
+  const icon=talentVisuals[talent.name].icon;
+  return `<div class="talent-node" style="grid-row:${talent.row};grid-column:${talent.col}">
+   <button type="button" class="talent-name" data-talent-detail="${branchIndex},${index}">
+    <img class="talent-icon" src="assets/talents/${icon}" alt="" loading="lazy">
+    <span class="talent-rank" aria-hidden="true">0/${talent.max}</span>
+   </button>
+  </div>`;
+ });
+ const links=tree.talents.flatMap((talent,index)=>{
+  if(talent.req===null)return [];
+  const from=tree.talents[talent.req];
+  return `<span class="talent-link" data-talent-link="${index}" style="--talent-col:${from.col};--talent-row:${from.row};--talent-depth:${talent.row-from.row}"></span>`;
+ });
+ return `<section class="talent-branch" data-talent-branch="${branchIndex}">
+  <h4>${tree.name}<span data-talent-points>0 点</span></h4>
+  <div class="talent-grid"><div class="talent-links" aria-hidden="true">${links.join('')}</div>${nodes.join('')}</div>
+  <button type="button" class="quiet talent-reset-branch" data-talent-reset="${branchIndex}">重置${tree.name}</button>
+ </section>`;
+}
 function drawTalents(){
- const totals=state.talents.map(a=>a.reduce((s,n)=>s+n,0));
- $('#talentTree').innerHTML=talentTrees.map((tree,x)=>`<section class="talent-branch"><h4>${tree.name}<span>${totals[x]} 点</span></h4><div class="talent-grid">${tree.talents.map((t,i)=>{let n=state.talents[x][i];return `<div class="talent-node ${n?'chosen':''}" style="grid-row:${t.row};grid-column:${t.col}"><button class="talent-name" data-talent-detail="${x},${i}" title="${t.name}：${talentDescriptions[t.name](n||1)}"><img class="talent-icon" src="assets/talents/${talentVisuals[t.name].icon}" alt="" loading="lazy"><strong>${t.name}</strong></button><span>${n}/${t.max}</span><small>${modeledTalents.has(t.name)?'已计算':'仅加点'}</small><div><button aria-label="减少${t.name}" data-talent-minus="${x},${i}">−</button><button aria-label="增加${t.name}" data-talent-plus="${x},${i}">+</button></div></div>`}).join('')}</div></section>`).join('');
- updateTalentTabs();if(selectedTalent)showTalentDetail(...selectedTalent);
- $('#talentStatus').textContent=`已分配 ${totals.reduce((s,n)=>s+n,0)} / 51 点 · ${totals.join(' / ')}。${state.talentsApplied?'天赋已应用；下方设定可继续微调。':'尚未应用或已手动调整模拟设定；可点击“重新应用天赋”。'}`;
+ const treeElement=$('#talentTree');
+ if(!treeElement.children.length){
+  treeElement.innerHTML=talentTrees.map(drawTalentBranch).join('');
+  const detail=$('#talentDetail');
+  detail.hidden=true;
+  detail.removeAttribute('role');
+ }
+ const totals=state.talents.map(ranks=>ranks.reduce((sum,rank)=>sum+rank,0));
+ const total=totals.reduce((sum,rank)=>sum+rank,0);
+ talentTrees.forEach((tree,branchIndex)=>{
+  const branch=treeElement.children[branchIndex],ranks=state.talents[branchIndex];
+  branch.querySelector('[data-talent-points]').textContent=`${totals[branchIndex]} 点`;
+  branch.querySelector('[data-talent-reset]').disabled=totals[branchIndex]===0;
+  tree.talents.forEach((talent,index)=>{
+   const rank=ranks[index],button=branch.querySelector(`[data-talent-detail="${branchIndex},${index}"]`);
+   const prior=ranks.reduce((sum,n,i)=>sum+(tree.talents[i].row<talent.row?n:0),0);
+   const prereq=talent.req===null||ranks[talent.req]===tree.talents[talent.req].max;
+   const locked=prior<(talent.row-1)*5||!prereq;
+   button.parentElement.dataset.rank=rank===talent.max?'max':rank?'partial':locked?'locked':total>=51?'capped':'available';
+   button.querySelector('.talent-rank').textContent=`${rank}/${talent.max}`;
+   button.setAttribute('aria-label',`${talent.name}，${rank}/${talent.max} 点${locked?'，前置条件未满足':''}`);
+   if(talent.req!==null)branch.querySelector(`[data-talent-link="${index}"]`).classList.toggle('is-unlocked',prereq);
+  });
+ });
+ updateTalentTabs();
+ if(selectedTalent&&!$('#talentDetail').hidden)showTalentDetail(...selectedTalent,$('#talentDetail').dataset.mode);
+ $('#talentStatus').textContent=`已分配 ${total} / 51 点 · 剩余 ${51-total} 点 · ${totals.join(' / ')}${state.talentsApplied?' · 已同步推演':''}`;
 }
-function showTalentDetail(x,i){
- const t=talentTrees[x].talents[i], n=state.talents[x][i], v=talentVisuals[t.name], describe=talentDescriptions[t.name], req=t.req===null?'无':talentTrees[x].talents[t.req].name+'（需点满）';
- const next=n<t.max?`<div><b>下一级 ${n+1}/${t.max}</b> ${describe(n+1)}</div>`:'<div><b>已达到最高等级</b></div>';
- const current=n?`<div><b>当前 ${n}/${t.max}</b> ${describe(n)}</div>`:'<div><b>当前未学习</b> 加入 1 点后生效。</div>';
- const ranks=Array.from({length:t.max},(_,j)=>`<li><b>${j+1} 级：</b>${describe(j+1)}</li>`).join('');
- $('#talentDetail').innerHTML=`<div class="talent-detail-head"><img src="assets/talents/${v.icon}" alt=""><div><strong>${t.name}</strong> <span>${n}/${t.max} · ${modeledTalents.has(t.name)?'资源 / 控制相关效果已计算':'仅加点，效果尚未计算'}</span>${v.cost?`<div class="talent-cost">${v.cost}</div>`:''}</div></div><div class="talent-rank-info">${current}${next}<div><b>前置天赋</b> ${req}；本系前置层数至少 ${(t.row-1)*5} 点。</div></div><details><summary>查看全部 ${t.max} 个等级</summary><ul>${ranks}</ul></details>`;
+function talentAnchor(branch,index){
+ return talentTree.querySelector(`[data-talent-detail="${branch},${index}"]`);
 }
-function talentApply(){applyTalentConfig(state.talents,state.cfg);state.talentsApplied=true;syncConfig();drawTalents();drawResult();save();}
-$('#talentTree').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.talentDetail!==undefined){selectedTalent=b.dataset.talentDetail.split(',').map(Number);showTalentDetail(...selectedTalent);return;}const plus=b.dataset.talentPlus!==undefined, [x,i]=(plus?b.dataset.talentPlus:b.dataset.talentMinus).split(',').map(Number), t=talentTrees[x].talents[i],next=state.talents[x][i]+(plus?1:-1);if(next<0||next>t.max)return;const a=structuredClone(state.talents);a[x][i]=next;const err=validateTalents(a);if(err){$('#talentStatus').textContent=err;return;}state.talents=a;talentApply();};
+function positionTalentDetail(anchor){
+ const box=anchor.getBoundingClientRect(),width=talentDetail.offsetWidth,height=talentDetail.offsetHeight;
+ const roomRight=innerWidth-box.right,roomLeft=box.left;
+ const placeRight=roomRight>=width+12||roomRight>=roomLeft;
+ const edge=placeRight?box.right+10:box.left-width-10;
+ talentDetail.style.left=`${Math.max(8,Math.min(innerWidth-width-8,edge))}px`;
+ talentDetail.style.top=`${Math.max(8,Math.min(innerHeight-height-8,box.top))}px`;
+}
+function showTalentDetail(x,i,mode='hover'){
+ const tree=talentTrees[x],t=tree.talents[i],n=state.talents[x][i];
+ const v=talentVisuals[t.name],describe=talentDescriptions[t.name];
+ const conditions=[];
+ if(t.row>1)conditions.push(`前面层级已投入 ${(t.row-1)*5} 点`);
+ if(t.req!==null)conditions.push(`点满${tree.talents[t.req].name}`);
+ const current=n?`<div><b>当前 ${n}/${t.max}</b> ${describe(n)}</div>`:'';
+ const next=n<t.max?`<div><b>${n?`下一级 ${n+1}/${t.max}`:'第 1 级'}</b> ${describe(n+1)}</div>`:'';
+ const ranks=Array.from({length:t.max},(_,j)=>`<li><b>${j+1} 级</b> ${describe(j+1)}</li>`).join('');
+ const sheet=mode==='sheet';
+ const oldAnchor=selectedTalent&&talentAnchor(...selectedTalent);
+ if(oldAnchor&&oldAnchor!==talentAnchor(x,i))oldAnchor.removeAttribute('aria-describedby');
+ selectedTalent=[x,i];
+ talentDetail.dataset.mode=mode;
+ talentDetail.setAttribute('role',sheet?'dialog':'tooltip');
+ if(sheet)talentDetail.setAttribute('aria-label',t.name);
+ else talentDetail.removeAttribute('aria-label');
+ talentDetail.innerHTML=`<div class="talent-detail-head">
+   <img src="assets/talents/${v.icon}" alt=""><div><strong>${t.name}</strong><div class="talent-detail-meta">${tree.name} · ${n}/${t.max} 点${n?'':' · 当前未学习'}</div></div>
+   ${sheet?'<button type="button" class="quiet talent-tip-close" data-talent-close aria-label="关闭天赋说明">×</button>':''}
+  </div>
+  ${v.cost?`<div class="talent-cost">${v.cost}</div>`:''}
+  <div class="talent-rank-info">${current}${next}
+   ${conditions.length?`<div class="talent-condition">需${conditions.join('，并且')}</div>`:''}
+  </div>
+  <p class="talent-tip-model">${modeledTalents.has(t.name)?'已纳入当前推演':'可分配点数 · 战斗效果待建模'}</p>
+  ${sheet?`<details><summary>查看全部等级</summary><ul>${ranks}</ul></details>
+  <div class="talent-tip-actions"><button type="button" class="quiet" data-talent-minus="${x},${i}"${n===0?' disabled':''}>− 减 1 点</button><button type="button" data-talent-plus="${x},${i}"${n===t.max?' disabled':''}>＋ 加 1 点</button></div>
+  <p class="talent-tip-message" role="status"></p>`:'<p class="talent-tip-keys">左键加点 · 右键减点 · 键盘 + / −</p>'}`;
+ talentDetail.hidden=false;
+ const anchor=talentAnchor(x,i);
+ if(!sheet){anchor.setAttribute('aria-describedby','talentDetail');positionTalentDetail(anchor);}
+ else{anchor.removeAttribute('aria-describedby');talentDetail.style.removeProperty('left');talentDetail.style.removeProperty('top');}
+}
+function closeTalentDetail(){
+ if(selectedTalent)talentAnchor(...selectedTalent)?.removeAttribute('aria-describedby');
+ talentDetail.hidden=true;
+ selectedTalent=null;
+}
+function talentApply(){
+ applyTalentConfig(state.talents,state.cfg);
+ state.talentsApplied=true;
+ syncConfig();drawTalents();drawResult();save();
+}
+function changeTalentRank(branch,index,delta){
+ const rank=state.talents[branch][index],talent=talentTrees[branch].talents[index],next=rank+delta;
+ if(next<0||next>talent.max)return;
+ const proposed=state.talents.map(ranks=>ranks.slice());
+ proposed[branch][index]=next;
+ const error=validateTalents(proposed);
+ if(error){
+  $('#talentStatus').textContent=error;
+  const message=talentDetail.querySelector('.talent-tip-message');
+  if(message)message.textContent=error;
+  return;
+ }
+ const focusedAction=document.activeElement?.matches('[data-talent-plus], [data-talent-minus]') ? document.activeElement.dataset : null;
+ state.talents=proposed;
+ talentApply();
+ if(focusedAction){
+  const selector=focusedAction.talentPlus?'[data-talent-plus]':'[data-talent-minus]';
+  (talentDetail.querySelector(`${selector}:enabled`)||talentDetail.querySelector('[data-talent-close]'))?.focus({preventScroll:true});
+ }
+}
+function talentNodeFromEvent(event){return event.target.closest('[data-talent-detail]');}
+function talentCoords(node){return node.dataset.talentDetail.split(',').map(Number);}
+const coarseTalentPointer=window.matchMedia('(hover: none)');
+talentTree.addEventListener('pointerover',event=>{
+ const node=talentNodeFromEvent(event);
+ if(!node||event.pointerType==='touch'||event.pointerType==='pen'||coarseTalentPointer.matches||node.contains(event.relatedTarget))return;
+ showTalentDetail(...talentCoords(node));
+});
+talentTree.addEventListener('pointerout',event=>{
+ const node=talentNodeFromEvent(event);
+ if(node&&!node.contains(event.relatedTarget)&&talentDetail.dataset.mode==='hover')closeTalentDetail();
+});
+talentTree.addEventListener('focusin',event=>{
+ const node=talentNodeFromEvent(event);
+ if(node&&node.matches(':focus-visible')&&!coarseTalentPointer.matches)showTalentDetail(...talentCoords(node));
+});
+talentTree.addEventListener('focusout',event=>{
+ if(talentNodeFromEvent(event)&&talentDetail.dataset.mode==='hover')closeTalentDetail();
+});
+talentTree.addEventListener('click',event=>{
+ const reset=event.target.closest('[data-talent-reset]');
+ if(reset){state.talents[Number(reset.dataset.talentReset)].fill(0);talentApply();return;}
+ const node=talentNodeFromEvent(event);
+ if(!node)return;
+ const coords=talentCoords(node);
+ if(event.pointerType==='touch'||event.pointerType==='pen'||coarseTalentPointer.matches){showTalentDetail(...coords,'sheet');return;}
+ showTalentDetail(...coords);
+ changeTalentRank(...coords,1);
+});
+talentTree.addEventListener('contextmenu',event=>{
+ const node=talentNodeFromEvent(event);
+ if(!node)return;
+ event.preventDefault();
+ if(event.pointerType==='touch'||event.pointerType==='pen'||coarseTalentPointer.matches)return;
+ const coords=talentCoords(node);
+ showTalentDetail(...coords);
+ changeTalentRank(...coords,-1);
+});
+talentTree.addEventListener('keydown',event=>{
+ const node=talentNodeFromEvent(event);
+ if(!node||!['+','=','-'].includes(event.key))return;
+ event.preventDefault();
+ const coords=talentCoords(node);
+ showTalentDetail(...coords);
+ changeTalentRank(...coords,event.key==='-'?-1:1);
+});
+talentDetail.addEventListener('click',event=>{
+ const close=event.target.closest('[data-talent-close]');
+ if(close){closeTalentDetail();return;}
+ const action=event.target.closest('[data-talent-plus], [data-talent-minus]');
+ if(!action)return;
+ const coords=(action.dataset.talentPlus||action.dataset.talentMinus).split(',').map(Number);
+ changeTalentRank(...coords,action.dataset.talentPlus?1:-1);
+});
+document.addEventListener('pointerdown',event=>{
+ if(!talentDetail.hidden&&!talentDetail.contains(event.target)&&!talentNodeFromEvent(event))closeTalentDetail();
+});
+document.addEventListener('keydown',event=>{
+ if(event.key==='Escape'&&!talentDetail.hidden){event.preventDefault();closeTalentDetail();}
+});
+window.addEventListener('resize',()=>{
+ if(talentDetail.dataset.mode==='hover')closeTalentDetail();
+});
+window.addEventListener('hashchange',closeTalentDetail);
+window.addEventListener('scroll',()=>{
+ if(!talentDetail.hidden&&talentDetail.dataset.mode==='hover'&&selectedTalent)positionTalentDetail(talentAnchor(...selectedTalent));
+},{passive:true});
 $('#talentApply').onclick=talentApply;
-$('#talentClear').onclick=()=>{state.talents=blankTalents();talentApply();};
-function importTalents(text){try{state.talents=parseTalentLink(text);talentApply();}catch(e){$('#talentStatus').textContent='导入失败：'+e.message;}}
+$('#talentClear').onclick=()=>{closeTalentDetail();state.talents=blankTalents();talentApply();};
+function importTalents(text){
+ try{const imported=parseTalentLink(text);closeTalentDetail();state.talents=imported;talentApply();}
+ catch(error){$('#talentStatus').textContent='导入失败：'+error.message;}
+}
 $('#talentImport').onclick=()=>importTalents($('#talentLink').value);
 $('#talentPreset').onclick=()=>{ $('#talentLink').value='https://wowhandbook.com/zh/classes/rogue/talents/#'+myTalentLink;importTalents(myTalentLink); };
+$('#talentCopy')?.addEventListener('click',async()=>{
+ const link='https://wowhandbook.com/zh/classes/rogue/talents/#'+state.talents.map(ranks=>ranks.join('').replace(/0+$/,'')).join('-');
+ const input=$('#talentLink');input.value=link;
+ try{await navigator.clipboard.writeText(link);$('#talentStatus').textContent='已复制当前加点链接。';}
+ catch{input.focus();input.select();$('#talentStatus').textContent='当前加点链接已填入输入框，可手动复制。';}
+});
 const talentOverrideIds=['reduction','flawlessReduction','dirtyDeeds','composure','exposeRank','ruthlessRank','relentlessRank','initiativeRank','sealRank','bootRank','flashRank','punctureRank','ambushCritRank','efficientRank','dirtyTricksRank','mutilate','adrenaline','coldblood','ghost'];
 talentOverrideIds.forEach(id=>$('#'+id).addEventListener('change',()=>{if(state.talentsApplied){state.talentsApplied=false;drawTalents();save();}}));

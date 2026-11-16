@@ -1,0 +1,148 @@
+#talentTree {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+#talentTree .talent-branch {
+  --branch-accent: #a88255;
+  background: radial-gradient(ellipse at 50% 0, #2a2a24, #141a17 76%);
+  border-color: #465247;
+  padding: 12px;
+}
+#talentTree .talent-branch[data-talent-branch="1"] {
+  --branch-accent: #a07353;
+  background: radial-gradient(ellipse at 50% 0, #2a2423, #181a19 76%);
+}
+#talentTree .talent-branch[data-talent-branch="2"] {
+  --branch-accent: #8a83ae;
+  background: radial-gradient(ellipse at 50% 0, #262433, #16191c 76%);
+}
+#talentTree .talent-grid {
+  --talent-step: 60px;
+  position: relative;
+  grid-template-rows: repeat(7, var(--talent-step));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin: 0 auto;
+  max-width: 430px;
+}
+#talentTree .talent-node {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  z-index: 1;
+}
+#talentTree .talent-name {
+  position: relative;
+  display: block;
+  width: 46px;
+  height: 46px;
+  border: 2px solid var(--branch-accent);
+  border-radius: 5px;
+  background: #141a16;
+  box-shadow: 0 2px 6px #000b;
+  touch-action: manipulation;
+}
+#talentTree .talent-name:hover, #talentTree .talent-name:focus-visible {
+  outline: 2px solid #f7e5b7;
+  outline-offset: 2px;
+}
+#talentTree .talent-name .talent-icon {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 3px;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+#talentTree [data-rank="locked"] .talent-name,
+#talentTree [data-rank="capped"] .talent-name {
+  border-color: #4e5550;
+}
+#talentTree [data-rank="locked"] .talent-icon,
+#talentTree [data-rank="capped"] .talent-icon {
+  filter: grayscale(1) brightness(.72);
+  opacity: .72;
+}
+#talentTree [data-rank="partial"] .talent-name {border-color: #86a978}
+#talentTree [data-rank="max"] .talent-name {border-color: #dfbc6c}
+#talentTree .talent-rank {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  padding: 1px 4px;
+  border: 1px solid #676f63;
+  border-radius: 3px;
+  color: #e0e4dc;
+  background: #171c19;
+  font-size: 11px;
+  line-height: 1.1;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+#talentTree [data-rank="partial"] .talent-rank {color: #c9e6b8;border-color: #749668}
+#talentTree [data-rank="max"] .talent-rank {color: #ffe2a0;border-color: #c5a060}
+#talentTree .talent-links {position: absolute;inset: 0;pointer-events: none}
+#talentTree .talent-link {
+  position: absolute;
+  left: calc((var(--talent-col) - .5) * 25%);
+  top: calc((var(--talent-row) - .5) * var(--talent-step));
+  height: calc(var(--talent-depth) * var(--talent-step) - 24px);
+  border-left: 2px solid #777d72;
+  transform: translateX(-1px);
+}
+#talentTree .talent-link::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: -5px;
+  border: 4px solid transparent;
+  border-top-color: #777d72;
+  border-bottom: 0;
+}
+#talentTree .talent-link.is-unlocked {border-left-color: #e2bd71}
+#talentTree .talent-link.is-unlocked::after {border-top-color: #e2bd71}
+#talentTree .talent-reset-branch {width: 100%;margin-top: 8px}
+#talentTree .talent-reset-branch:disabled {opacity: .55;cursor: default}
+#talentDetail[hidden] {display: none}
+#talentDetail {
+  position: fixed;
+  z-index: 1500;
+  max-height: min(75vh, 500px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid #ac8e54;
+  border-radius: 8px;
+  background: #171e19;
+  box-shadow: 0 14px 42px #000a, inset 0 0 0 1px #aa8e3c20;
+  color: #ece9db;
+  font-size: 13px;
+  line-height: 1.5;
+}
+#talentDetail[data-mode="hover"] {width: min(340px, calc(100vw - 16px));pointer-events: none}
+#talentDetail[data-mode="sheet"] {inset: auto 8px max(8px, env(safe-area-inset-bottom)) 8px;max-width: 490px;margin-inline: auto}
+#talentDetail .talent-detail-head {align-items: center}
+#talentDetail .talent-detail-meta, #talentDetail .talent-tip-model, #talentDetail .talent-tip-keys {color: #bcc4b5;font-size: 12px}
+#talentDetail .talent-tip-model, #talentDetail .talent-tip-keys {margin: 8px 0 0}
+#talentDetail .talent-tip-keys {padding-top: 8px;border-top: 1px solid #586354}
+#talentDetail .talent-tip-close {margin-left: auto;min-width: 44px;min-height: 44px;font-size: 20px}
+#talentDetail .talent-rank-info {gap: 9px}
+#talentDetail .talent-rank-info b {display: block}
+#talentDetail .talent-condition {color: #f1bf80}
+#talentDetail .talent-tip-actions {display: grid;grid-template-columns: 1fr 1fr;gap: 8px;margin-top: 12px}
+#talentDetail .talent-tip-actions button {min-height: 44px}
+#talentDetail .talent-tip-actions button:disabled {opacity: .55;cursor: default}
+#talentDetail .talent-tip-message {margin: 8px 0 0;color: #ffab98}
+#talentDetail .talent-tip-message:empty {display: none}
+@media (max-width: 760px) {
+  #talentTree {grid-template-columns: minmax(0, 1fr)}
+  #talentTree .talent-branch:not(.mobile-active) {display: none}
+  #talentTree .talent-branch {max-width: 500px;width: 100%;justify-self: center}
+  .mobile-talent-tabs {display: grid;grid-template-columns: repeat(3, 1fr);gap: 6px;margin: 12px 0 8px}
+  .mobile-talent-tabs button {min-height: 44px;border: 1px solid #49554b;border-radius: 4px;background: #202924;color: #d1dbd2}
+  .mobile-talent-tabs [aria-selected="true"] {border-color: #d1ae68;color: #f4d99d;background: #3b3425}
+}

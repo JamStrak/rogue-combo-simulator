@@ -31,9 +31,21 @@ function skillCost(id, cfg, book, energy, inCombat) {
  const passive=poised?10+Number(cfg.composure||0):0;
  return {base,talent,passive,cost:Math.max(0,base-talent-passive)};
 }
+const damageCritSkills=new Set(['ambush','ghost','hemo','mutilate','backstab','sinister','gouge','eviscerate','strike']);
+const sealFateSkills=new Set(['ambush','ghost','hemo','mutilate','backstab','sinister','gouge']);
+function meleeCritChance(cfg,id,hand=id==='strike'?'off':'main'){
+ const weapon=(hand==='off'?cfg.offWeaponType:cfg.mainWeaponType)||'dagger';
+ const weaponBonus=id!=='bleed'&&['dagger','fist'].includes(weapon)?Number(cfg.slashRank)||0:0;
+ const talentBonus={ambush:15*(Number(cfg.ambushCritRank)||0),backstab:10*(Number(cfg.punctureRank)||0),mutilate:5*(Number(cfg.punctureRank)||0)}[id]||0;
+ return Math.max(0,Math.min(100,(Number(cfg.crit)||0)+(Number(cfg.maliceRank)||0)+weaponBonus+talentBonus));
+}
 function simulate(sequence, cfg, book=skills, options={}) {
  const max=cfg.max, regen=cfg.regen, gcd=cfg.gcd;
  let seed=(Number(cfg.seed)||1)>>>0;
+ // 纯伤害暴击独立掷骰，避免改变原本的能量、连击点及控制分支。
+ let damageSeed=seed^0x5bd1e995;
+ const damageRandom=()=>{damageSeed=(Math.imul(damageSeed,1664525)+1013904223)>>>0;return damageSeed/4294967296;};
+ const rollDamage=chance=>chance>=100||(chance>0&&damageRandom()<chance/100);
  const roll=(chance,mode,label)=>{chance=Math.max(0,Math.min(100,chance));if(chance<=0)return false;if(chance>=100)return true;if(options.roll)return options.roll(chance,mode,label);if(mode==='yes')return true;if(mode==='no')return false;seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296<chance/100;};
  let premedPending=0, premedUntil=0, coldBloodActive=false, adrenalineUntil=0, t=0, energy=Math.min(cfg.start,max), cp=0, ready=0, controlEnd=0, controlType='', stealth=cfg.startStealth!==false, inCombat=!!cfg.startCombat, ghostUntil=-1, cooldowns={}, dr={}, activeDr='', rows=[], gap=0, controlled=0, totalEnergyWait=0, controlBroken=false, lastAction=null, stopped=false, gapReasons=[];
  const addEnergy = (dt)=>{ const before=energy; energy=Math.min(max,energy+regen*dt+regen*Math.max(0,Math.min(t+dt,adrenalineUntil)-t)); return energy-before; };
@@ -73,8 +85,30 @@ function simulate(sequence, cfg, book=skills, options={}) {
   if(entry.id==='strike'&&cfg.bootRank){const chance=20*Number(cfg.bootRank);const hit=roll(chance,'random','靴中剑');if(hit)addCombo(2);notes.push(`靴中剑 ${chance}%：${hit?'触发 +2 星':'未触发'}`);}
   if(entry.id==='backstab'&&cfg.punctureRank){const chance=15*Number(cfg.punctureRank);const hit=roll(chance,'random','穿刺之伤');if(hit)addCombo(1);notes.push(`穿刺之伤 ${chance}%：${hit?'触发 +1 星':'未触发'}`);}
   const usesColdBlood=coldBloodActive&&['sinister','backstab','ambush','eviscerate','mutilate'].includes(entry.id);
-  const critEligible=['ambush','mutilate','backstab','sinister','hemo','gouge','ghost'].includes(entry.id);
-  if(critEligible&&cfg.sealRank){let crit=usesColdBlood?100:Math.min(100,Number(cfg.crit||0)+Number(cfg.maliceRank||0)+(entry.id==='ambush'?15*Number(cfg.ambushCritRank||0):entry.id==='backstab'?10*Number(cfg.punctureRank||0):entry.id==='mutilate'?5*Number(cfg.punctureRank||0):0));if(entry.id==='mutilate')crit=100*(1-(1-crit/100)**2);const critical=roll(crit,'random','暴击');const chance=[0,33,66,100][Number(cfg.sealRank)];const hit=critical&&roll(chance,'random','封印命运');if(hit)addCombo(1);notes.push(`暴击 ${fmt(crit)}%：${critical?'是':'否'}；封印命运${hit?'触发 +1 星':'未触发'}`);}
+  const sealRank=Number(cfg.sealRank)||0;
+  const affectsSealFate=sealRank>0&&sealFateSkills.has(entry.id);
+  let critOutcome=null;
+  if(damageCritSkills.has(entry.id)&&(options.damageCrits!==false||affectsSealFate)){
+   const bothHands=entry.id==='mutilate',offHandOnly=entry.id==='strike';
+   const mainChance=offHandOnly?null:usesColdBlood?100:meleeCritChance(cfg,entry.id,'main');
+   const offChance=bothHands||offHandOnly?(usesColdBlood?100:meleeCritChance(cfg,entry.id,'off')):null;
+   const doubleChance=bothHands?mainChance*offChance/100:0;
+   const chance=bothHands?100-(100-mainChance)*(100-offChance)/100:(mainChance??offChance);
+   const critical=affectsSealFate?roll(chance,'random','暴击'):rollDamage(chance);
+   if(options.damageCrits!==false){
+    // 毁伤先判至少一手暴击，再按双手的独立概率确定是哪一手。
+    // 封印命运只关心前一项，因此概率分析不为单手/双手伤害另开分支。
+    const handRoll=bothHands&&critical?damageRandom()*chance:0;
+    const main=mainChance===null?null:critical&&(!bothHands||handRoll<mainChance);
+    const off=offChance===null?null:critical&&(!bothHands||handRoll<doubleChance||handRoll>=mainChance);
+    critOutcome={chance,critical,mainChance,offChance,main,off};
+   }
+   const sealChance=[0,33,66,100][sealRank];
+   const sealHit=affectsSealFate&&critical&&roll(sealChance,'random','封印命运');
+   if(sealHit)addCombo(1);
+   const sealNote=affectsSealFate?`；封印命运${sealHit?'触发 +1 星':'未触发'}`:'';
+   notes.push(`暴击 ${fmt(chance)}%：${critical?'是':'否'}${sealNote}`);
+  }
   if(usesColdBlood){coldBloodActive=false;notes.push('消耗冷血：本次暴击率提高 100%');}
   if(entry.id==='coldblood'){coldBloodActive=true;notes.push('冷血：下一次符合条件的技能暴击率提高 100%');}
   if(entry.id==='adrenaline'){adrenalineUntil=t+15;notes.push('冲动：15 秒内自然回能翻倍');}
@@ -101,9 +135,9 @@ function simulate(sequence, cfg, book=skills, options={}) {
   if(recovered>0)notes.push(`等待回能 ${fmt(recovered)}`);
   notes.push(...gapNote());
   cooldowns[entry.id]=t+Math.max(0,Number(s.cd)-(entry.id==='strike'?0.4*Number(cfg.flashRank||0):['vanish','blind'].includes(entry.id)?45*Number(cfg.elusivenessRank||0):0)); if(!entry.offGcd)ready=t+gcd; if(!s.self)lastAction=t; if(!s.vanish&&!s.self)inCombat=true;
-  rows.push({index:i,name:s.name,time:t,before,after:energy,cp,cpBefore:oldCp,controlEnd,gap,notes,cost,comboOverflow,energyShortage,energyWait,controlGap:gap-startGap,gapReasons});
+  rows.push({index:i,name:s.name,time:t,before,after:energy,cp,cpBefore:oldCp,controlEnd,gap,notes,cost,comboOverflow,energyShortage,energyWait,controlGap:gap-startGap,gapReasons,critOutcome});
  }
  return {rows,stopped,gap,controlled:controlled+Math.max(0,controlEnd-t),energyWait:totalEnergyWait,time:t,energy,cp,controlEnd};
 }
 function fmt(n){return (Math.round(n*100)/100).toString();}
-if(typeof module!=='undefined')module.exports={skills,simulate,fmt,skillCost};
+if(typeof module!=='undefined')module.exports={skills,simulate,fmt,skillCost,meleeCritChance};

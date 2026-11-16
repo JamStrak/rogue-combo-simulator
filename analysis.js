@@ -22,7 +22,7 @@ function analyzeProbability(sequence,cfg,book,options={}) {
  function explore(path,weight){
   if(++calls>maxLeaves*16||stats.leaves>=maxLeaves)throw tooMany;
   let pos=0;
-  try {const result=simulateModel(sequence,settings,book,{roll(chance,mode,label){if(pos<path.length)return path[pos++];throw {branch:true,chance,label};}});collect(result,weight);}
+  try {const result=simulateModel(sequence,settings,book,{damageCrits:false,roll(chance,mode,label){if(pos<path.length)return path[pos++];throw {branch:true,chance,label};}});collect(result,weight);}
   catch(e){if(!e.branch)throw e;let p=e.chance/100;explore([...path,true],weight*p);explore([...path,false],weight*(1-p));}
  }
  try{explore([],1);stats.method='exact';}
@@ -30,7 +30,7 @@ function analyzeProbability(sequence,cfg,book,options={}) {
   if(e!==tooMany)throw e;
   stats=createStats();let seed=(Number(cfg.seed)||1)>>>0;
   for(let i=0;i<samples;i++){
-   const result=simulateModel(sequence,settings,book,{roll(chance){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296<chance/100;}});
+   const result=simulateModel(sequence,settings,book,{damageCrits:false,roll(chance){seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296<chance/100;}});
    collect(result,1/samples);
   }
   stats.method='sample';stats.samples=samples;
