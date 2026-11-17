@@ -288,6 +288,17 @@ function comboPointBadge(row){
 function drawNearbyResult(v,damage){
  const last=v.rows.at(-1), panel=$('#livePreview'),byDamage=new Map(damage.rows.map(row=>[row.index,row]));
  drawDraftEnergy(v);
+ const quickEnergy=$('#actionbarEnergy'),quickLast=$('#actionbarLast'),quickStatus=$('#actionbarStatus');
+ quickEnergy.max=state.cfg.max;quickEnergy.value=v.energy;
+ $('#actionbarEnergyText').textContent=`${fmt(v.energy)} / ${fmt(state.cfg.max)}`;
+ $('#actionbarPoints').textContent='●'.repeat(v.cp)+'○'.repeat(5-v.cp);
+ $('#actionbarPoints').setAttribute('aria-label',`连击点 ${v.cp} / 5`);
+ const overflow=last?.notes?.some(note=>/连击点溢出/.test(note));
+ const danger=!!last&&(!!last.error||last.energyWait>0||last.controlGap>0);
+ quickStatus.dataset.risk=danger?'danger':overflow?'overflow':'';
+ const detail=last?.error?' · 无法施放':last?.energyWait>0?` · 等能量 ${fmt(last.energyWait)} 秒`:last?.controlGap>0?` · 控制空档 ${fmt(last.controlGap)} 秒`:overflow?' · 连击点溢出':'';
+ const recentDamage=last&&byDamage.get(last.index);
+ quickLast.textContent=last?`第 ${last.index+1} 步 ${last.name} · 伤害 ${recentDamage?fmt(recentDamage.damage):'—'}${detail}`:'选择技能开始推演';
  if(!last){panel.innerHTML='<div class="live-title"><strong>即时推演</strong><div class="preview-links"><a class="preview-replay-link" href="#combatPlayer">木桩 ↓</a><a href="#section-results">完整结果 →</a></div></div><div class="live-empty">添加技能后显示本步伤害和控制。</div>';}
  else{
   const blocked=v.stopped?' · 已中断'+(state.sequence.length>last.index+1?'，后续未执行':''):'';

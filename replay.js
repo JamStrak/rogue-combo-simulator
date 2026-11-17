@@ -110,6 +110,9 @@ function setupReplay(){
  markStatus.className='combat-mark-status';
  markStatus.hidden=true;
  markStatus.setAttribute('aria-label','死亡印记储存伤害');
+ markStatus.innerHTML='<div class="combat-mark-heading"><strong>死亡印记</strong><span class="combat-mark-time"></span></div><div class="combat-mark-values"><span>储存 / 上限 <b class="combat-mark-stored"></b></span><span>预计结算 <b class="combat-mark-estimate"></b></span></div><progress class="combat-mark-bar" aria-label="死亡印记储存进度"></progress>';
+ const markTime=markStatus.querySelector('.combat-mark-time'),markStored=markStatus.querySelector('.combat-mark-stored');
+ const markEstimate=markStatus.querySelector('.combat-mark-estimate'),markBar=markStatus.querySelector('.combat-mark-bar');
  diagnostics.before(markStatus);
  const controlStatus=byId('combatControlStatus'),controlDetail=byId('combatControlDetail');
  const castStatus=byId('combatCastStatus'),castDetail=byId('combatCastDetail');
@@ -204,7 +207,14 @@ function setupReplay(){
    comboOrbs.forEach((orb,index)=>orb.classList.toggle('active',index<cp));
   }
   markStatus.hidden=!snap.mark;
-  if(snap.mark)setText(markStatus,`死亡印记 · 累计储存 ${number(snap.mark.stored)} / 上限 ${number(snap.mark.cap)} · 当前预计结算 ${number(Math.min(snap.mark.stored,snap.mark.cap)*snap.mark.talentMultiplier)} · 剩余 ${seconds(snap.mark.remaining)}`);
+  if(snap.mark){
+   setText(markTime,`剩余 ${seconds(snap.mark.remaining)}`);
+   setText(markStored,`${number(snap.mark.stored)} / ${number(snap.mark.cap)}`);
+   setText(markEstimate,number(Math.min(snap.mark.stored,snap.mark.cap)*snap.mark.talentMultiplier));
+   markBar.max=Math.max(1,snap.mark.cap);
+   markBar.value=Math.min(snap.mark.stored,snap.mark.cap);
+   markBar.setAttribute('aria-valuetext',`储存 ${number(snap.mark.stored)}，上限 ${number(snap.mark.cap)}`);
+  }
   paintDiagnostics(model,snap,ready);
   stage.dataset.playback=replayPlayer.status;
   const labels={playing:'暂停',paused:'继续',done:'重新播放',ready:'播放连招'};

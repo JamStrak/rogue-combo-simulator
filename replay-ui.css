@@ -302,3 +302,46 @@
   overflow-wrap: anywhere;
 }
 .combat-mark-status[hidden] { display: none; }
+
+/* 战斗读数：资源与状态优先，舞台光效只作提示。 */
+.combat-player { border-color: #62583e; background: #141a16; box-shadow: 0 8px 24px #0003; }
+.combat-stage { background: radial-gradient(ellipse at 48% 100%, #3a4032, #202820 55%, #141b17); border-block: 1px solid #665a3d; }
+.combat-stage[data-control="held"] { background: radial-gradient(ellipse at 55% 100%, #56502e, #292d20 55%, #171e18); box-shadow: inset 0 -2px #c6a65b; }
+.combat-stage[data-control="gap"] { background: radial-gradient(ellipse at 55% 100%, #51302a, #29201c 55%, #191918); box-shadow: inset 0 -2px #b95f50; }
+.combat-stage[data-control="held"] .combat-dummy { filter: drop-shadow(0 0 4px #f9d87c); }
+.combat-stage[data-control="held"] .combat-dummy::after { box-shadow: 0 0 6px #ffe17988; }
+.combat-stage .combat-now { background: #121a15ed; border-color: #746849; box-shadow: inset 0 1px #ffffff12; }
+.combat-step #combatStepIndex { font-size: clamp(20px, 4vw, 28px); }
+.combat-meters { gap: 10px; padding-top: 12px; }
+.combat-meter { min-width: 0; }
+.combat-meter > div { align-items: baseline; gap: 5px; color: #c2cbbf; }
+.combat-meter strong { font-size: 14px; white-space: nowrap; }
+.combat-meter.energy strong { color: #f4db8e; }
+.combat-meter progress { height: 12px; border: 1px solid #6b6249; background: #111710; }
+.combat-meter progress::-webkit-progress-bar { background: #111710; }
+.combat-meter.energy progress::-webkit-progress-value { background: linear-gradient(180deg, #f4d47a, #b78630); }
+.combat-meter.energy progress::-moz-progress-bar { background: linear-gradient(180deg, #f4d47a, #b78630); }
+.combat-damage-total strong { color: #f5dd9e; font-variant-numeric: tabular-nums; }
+.combat-combo { border: 1px solid #766746; background: #101711ed; }
+.combat-combo-orbs i { width: 12px; height: 12px; }
+.combat-diagnostics { gap: 1px; background: #4f5342; }
+.combat-diagnostics > div { min-height: 64px; background: #1b251d; }
+.combat-diagnostics strong { font-size: 14px; }
+.combat-mark-status { margin: 0; padding: 9px 14px 10px; border: 0; border-bottom: 1px solid #754050; border-radius: 0; background: linear-gradient(100deg, #321a25, #21191d); color: #f6dce0; }
+.combat-mark-heading, .combat-mark-values { display: flex; justify-content: space-between; align-items: baseline; gap: 4px 12px; flex-wrap: wrap; }
+.combat-mark-heading strong { color: #ffc2d0; font-size: 13px; }
+.combat-mark-time { color: #e6bcc5; font-variant-numeric: tabular-nums; }
+.combat-mark-values { margin: 4px 0; color: #d6bfc4; font-size: 12px; }
+.combat-mark-values b { color: #fff0ee; font-size: 14px; font-variant-numeric: tabular-nums; }
+.combat-mark-values span:last-child b { color: #ffc487; }
+.combat-player .combat-mark-bar { display: block; height: 8px; background: #160f13; }
+.combat-player .combat-mark-bar::-webkit-progress-bar { background: #160f13; }
+.combat-player .combat-mark-bar::-webkit-progress-value { background: linear-gradient(90deg, #9a3e5a, #ee8191); }
+.combat-player .combat-mark-bar::-moz-progress-bar { background: linear-gradient(90deg, #9a3e5a, #ee8191); }
+@media (max-width: 600px) {
+  .combat-mark-status { padding-inline: 10px; }
+  .combat-meter strong { font-size: 12px; }
+  .combat-combo { gap: 3px; }
+  .combat-combo-orbs { gap: 2px; }
+  .combat-combo-orbs i { width: 10px; height: 10px; }
+}
