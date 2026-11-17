@@ -170,15 +170,18 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
  const rank=Math.max(0,Math.min(3,Math.floor(number(cfg.deadlyStrikeRank,0))));
  const talentMultiplier=1+[0,0.07,0.13,0.20][rank];
  // 提前刷新时按新印记覆盖旧印记，覆盖是否触发旧印记需游戏内验证。
- const deathmarkEvents=marks.filter((mark,i)=>!marks[i+1]||marks[i+1].time>=mark.time+6-1e-9).map(mark=>{
+ const markWindows=marks.map(mark=>{
   const cp=Math.max(1,Math.min(5,Math.floor(number(mark.cpBefore,0))));
-  const expiry=mark.time+6, ratio=0.12*cp*talentMultiplier;
+  const cap=([0,165,267,369,471,573][cp]+ap*0.04*cp)*(1+metrics.critRate/100);
+  return {index:mark.index,time:mark.time,expiry:mark.time+6,ratio:0.12*cp*talentMultiplier,cap,talentMultiplier};
+ });
+ const deathmarkEvents=markWindows.filter((mark,i)=>!markWindows[i+1]||markWindows[i+1].time>=mark.expiry-1e-9).map(mark=>{
+  const {expiry,ratio,cap}=mark;
   // 同刻已排定的流血/平砍先于施法；到期时它们先结算，技能后结算。
   const eligible=event=>(event.time>mark.time+1e-9||(event.type==='direct'&&Math.abs(event.time-mark.time)<=1e-9&&event.index>mark.index))&&
    (event.time<expiry-1e-9||(event.type!=='direct'&&Math.abs(event.time-expiry)<=1e-9));
   const stored=[...bleedEvents,...whiteEvents,...directEvents].filter(eligible).reduce((sum,event)=>sum+event.damage*(event.type==='bleed'?2:1)*ratio,0);
   // 暴击率对上限的系数为客户端技能公式；致命一击对最终伤害的作用仍需实测。
-  const cap=([0,165,267,369,471,573][cp]+ap*0.04*cp)*(1+metrics.critRate/100);
   return {time:expiry,type:'deathmark',id:'deathmark',name:'死亡印记结算',index:mark.index,damage:Math.min(stored,cap)*talentMultiplier,stored,cap,crit:null};
  });
  const order={bleed:0,white:1,deathmark:2,direct:3};
@@ -208,6 +211,6 @@ function calculateDamage(sequence, simulation, cfg, settings=damageDefaults()){
   while(left<events.length&&events[left].time===start)running-=events[left++].damage;
  }
 
- return {rows,total,during,tailDamage,whiteTailDamage,markTailDamage,markTotal,directTotal,bleedTotal,whiteTotal,duration,endTime,dps:endTime>0?total/endTime:null,peak,events};
+ return {rows,total,during,tailDamage,whiteTailDamage,markTailDamage,markTotal,directTotal,bleedTotal,whiteTotal,duration,endTime,dps:endTime>0?total/endTime:null,peak,events,markWindows};
 }
 if(typeof module!=='undefined')module.exports={damageDefaults,weaponMetrics,calculateDamage};

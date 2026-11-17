@@ -103,3 +103,5 @@
 `node test-replay.js` 验证播放事件及连续回能；`node test-talent-details.js` 验证全部图标和各级说明；`node test-talents.js` 验证链接导入、天赋约束、同步和预谋；`node test-probability.js` 验证概率枚举、抽样降级、联合概率与相关天赋；`node test-engine.js` 验证回能、减耗、起手星数、天赋返星和概率分支、控制递减与重置、空档、公共 CD、能量等待、冷却、潜行及打破控制。`test-ui.js`、`test-replay-ui.js`、`test-replay-motion-ui.js`、`test-replay-crit-ui.js`、`test-chain-ui.js` 与 `test-proc-ui.js` 是界面交互验证脚本，需要注入临时副本执行；正常页面不会加载它们。播放界面测试覆盖同刻动作、连续回能、平砍时刻、暂停重播、倍速及长帧事件；动画测试覆盖技能实际暴击、暂停定格与恢复、淡出清理，以及木桩随控制状态定格和恢复。
 
 死亡印记参考 [WoW Handbook 盗贼天赋](https://wowhandbook.com/zh/classes/rogue/?view=talents) 与 [暴雪测试说明](https://us.forums.blizzard.com/en/wow/t/wow-forever-beta-development-notes-%E2%80%93-updated-november-2/2360696)。上限的暴击率系数参考客户端技能公式，致命一击的加成顺序尚待实测；当前先按储存比例与最终伤害分别增加处理。到期同刻的流血和平砍先结算，技能后结算；提前重施按覆盖旧印记处理；这些边界均为待验证假设。印记仅统计本模拟器已建模伤害，不额外掷骰爆发暴击。
+
+木桩播放期间，死亡印记面板显示当前累计储存、储存上限、预计结算和剩余时间；储存随实际模拟命中事件变化，预计结算按现有上限及天赋估算，暂停时保持。技能快捷栏位于木桩下方，桌面 8 列、手机 6 列；点击仍是编排模拟，显示能耗、回能、冷却及不可用状态。

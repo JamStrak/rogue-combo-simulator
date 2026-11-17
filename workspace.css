@@ -265,3 +265,23 @@ main{width:100%;max-width:1370px;margin:0 auto;padding:18px 20px 0}
 .sequence-detail .seq-proc-detail ul{margin:4px 0 0;padding-left:18px}
 .sequence-detail .seq-proc-detail p{margin:5px 0 0;color:#c9d3c8}
 @media(max-width:600px){#sequence .seq-proc-marker{width:32px;height:32px}#sequence .seq-crit-marker{width:auto}}
+
+/* 木桩下方的战斗快捷栏：桌面三排，手机六列自然换行。 */
+.actionbar-panel{grid-area:actionbar;min-width:0;padding:7px;border:1px solid #62563d;border-radius:5px;background:linear-gradient(180deg,#302a20,#141915);box-shadow:inset 0 1px #b39b6544,0 3px 8px #0005}
+.actionbar-head{display:flex;align-items:center;color:#dfc997;font-size:12px;font-weight:700;letter-spacing:.04em}
+.actionbar-panel .small{margin:5px 2px 0;line-height:1.4}
+.sim-lab .palette{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:4px;margin:5px 0 0;padding:0}
+.sim-lab .skill{width:100%;min-width:0;min-height:72px;padding:3px 1px;gap:2px;border:1px solid #5a5748;border-radius:3px;background:linear-gradient(#363528,#1b211b);box-shadow:inset 0 1px #ffffff16,0 1px 2px #0009;touch-action:manipulation}
+.sim-lab .skill .skill-picture{width:44px;height:44px;max-width:100%;border:1px solid #9a8558;border-radius:2px;box-shadow:0 1px 3px #000}
+.sim-lab .skill .skill-name{font-size:11px;line-height:15px;color:#eadfbf;letter-spacing:-.03em}
+.sim-lab .skill:hover:not(:disabled){border-color:#e5c77d;background:linear-gradient(#51452b,#24291d)}
+.sim-lab .skill[data-fit=energy]{box-shadow:inset 0 0 0 1px #d7a949,0 1px 2px #0009}
+.sim-lab .skill:disabled{border-color:#41453d;background:#1a1e1a}
+.sim-lab{grid-template-areas:"skills" "replay" "actionbar" "queue"}
+@media(min-width:601px){.sim-lab{grid-template-areas:"skills replay" "actionbar actionbar" "queue queue";grid-template-rows:auto auto auto}}
+@media(min-width:940px){.sim-lab{grid-template-areas:"skills replay" "skills actionbar" "skills queue";grid-template-rows:auto auto 1fr}}
+@media(max-width:600px){.actionbar-panel{padding:5px}.sim-lab .palette{grid-template-columns:repeat(6,minmax(0,1fr));gap:3px;margin:5px 0 0}.sim-lab .skill{min-height:72px;padding:3px 1px}}
+
+/* 保留技能面板事件委托，让控制区与快捷栏分别参与布局。 */
+.sim-lab .skill-panel{display:contents}
+.skill-controls{grid-area:skills;min-width:0}

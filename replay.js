@@ -23,8 +23,18 @@ function makeReplay(sequence, simulation, damage, cfg) {
  const order={bleed:0,white:1,deathmark:2,action:3,wait:3,error:3};
  events.sort((a,b)=>a.time-b.time||(order[a.type]-order[b.type])||a.index-b.index);
  const actionByIndex=new Map(actions.map(row=>[row.index,row]));
- let cumulative=0;
+ let cumulative=0,activeMark=null;
+ const marks=new Map((damage.markWindows||[]).map(mark=>[mark.index,mark]));
  for(const [index,event] of events.entries()){
+  if(event.type==='deathmark'&&activeMark?.index===event.index)activeMark=null;
+  else if(event.type==='action'&&marks.has(event.index))activeMark={...marks.get(event.index),stored:0};
+  else if(activeMark&&['action','bleed','white'].includes(event.type)){
+   // 与伤害结算保持一致：同刻技能按步骤序号，流血和平砍在施法前、到期结算前。
+   const eligibleStart=event.time>activeMark.time+1e-9||(event.type==='action'&&Math.abs(event.time-activeMark.time)<=1e-9&&event.index>activeMark.index);
+   const eligibleEnd=event.time<activeMark.expiry-1e-9||(event.type!=='action'&&Math.abs(event.time-activeMark.expiry)<=1e-9);
+   if(eligibleStart&&eligibleEnd)activeMark.stored+=(event.damage||0)*(event.type==='bleed'?2:1)*activeMark.ratio;
+  }
+  event.mark=activeMark?{...activeMark}:null;
   cumulative+=event.damage||0;event.cumulative=cumulative;
   if(['action','wait','error'].includes(event.type))actionByIndex.get(event.index).eventIndex=index;
  }
@@ -61,6 +71,7 @@ function replayAt(model,time,seen=Infinity) {
  while(lo<hi){const mid=(lo+hi)>>1;if(model.events[mid].time<=t+1e-9)lo=mid+1;else hi=mid;}
  lo=Math.min(lo,seen);
  return {
+  mark:lo&&model.events[lo-1].mark?{...model.events[lo-1].mark,remaining:Math.max(0,model.events[lo-1].mark.expiry-t)}:null,
   time:t,energy,cp:Math.max(0,(previous?.cp||0)-(previous?.premedPending&&t>=previous.premedUntil?previous.premedPending:0)),controlRemaining,damage:lo?model.events[lo-1].cumulative:0,
   step,gap,energyWaiting,timedAction,inCombat,autoAttacking,combatRemaining,stealth,blocked:previous?.error?previous:null,previous
  };
@@ -95,6 +106,11 @@ function setupReplay(){
  diagnostics.className='combat-diagnostics';
  diagnostics.innerHTML='<div><span>木桩状态</span><strong id="combatControlStatus"></strong><small id="combatControlDetail"></small></div><div><span>施放状态</span><strong id="combatCastStatus"></strong><small id="combatCastDetail"></small></div>';
  stage.after(diagnostics);
+ const markStatus=document.createElement('div');
+ markStatus.className='combat-mark-status';
+ markStatus.hidden=true;
+ markStatus.setAttribute('aria-label','死亡印记储存伤害');
+ diagnostics.before(markStatus);
  const controlStatus=byId('combatControlStatus'),controlDetail=byId('combatControlDetail');
  const castStatus=byId('combatCastStatus'),castDetail=byId('combatCastDetail');
  const format=new Intl.NumberFormat('zh-CN',{maximumFractionDigits:2});
@@ -187,6 +203,8 @@ function setupReplay(){
    setText(comboText,`${cp} / 5`);
    comboOrbs.forEach((orb,index)=>orb.classList.toggle('active',index<cp));
   }
+  markStatus.hidden=!snap.mark;
+  if(snap.mark)setText(markStatus,`死亡印记 · 累计储存 ${number(snap.mark.stored)} / 上限 ${number(snap.mark.cap)} · 当前预计结算 ${number(Math.min(snap.mark.stored,snap.mark.cap)*snap.mark.talentMultiplier)} · 剩余 ${seconds(snap.mark.remaining)}`);
   paintDiagnostics(model,snap,ready);
   stage.dataset.playback=replayPlayer.status;
   const labels={playing:'暂停',paused:'继续',done:'重新播放',ready:'播放连招'};
